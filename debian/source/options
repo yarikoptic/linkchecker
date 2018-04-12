@@ -1,0 +1,2 @@
+--extend-diff-ignore=doc/web/.*
+--extend-diff-ignore=.travis.yml
