@@ -1,10 +1,10 @@
-This is linkchecker, written and maintained by Bastian Kleineidam
+This is linkchecker, written by Bastian Kleineidam
 <calvin@debian.org> on Sat,  8 Jan 2000 11:00:35 +0100.
 
 Upstream VCS:
-	git://github.com/wummel/linkchecker.git
+	git://github.com/linkcheck/linkchecker.git
 Upstream VCS browser:
-	https://github.com/wummel/linkchecker
+	https://github.com/linkcheck/linkchecker
 
 Copyright (C) 2000-2014 Bastian Kleineidam
 
@@ -53,24 +53,6 @@ linkcheck/optcomplete.py
 #* (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #******************************************************************************\
-
-third_party/dnspython/*
------------------------
-
-Copyright (C) 2001-2011 Nominum, Inc.
-
-Permission to use, copy, modify, and distribute this software and its
-documentation for any purpose with or without fee is hereby granted,
-provided that the above copyright notice and this permission notice
-appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND NOMINUM DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL NOMINUM BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
-OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 linkcheck/mem.py
 ----------------
