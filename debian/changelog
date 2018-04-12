@@ -1,10 +1,14 @@
-linkchecker (9.4-1) UNRELEASED; urgency=low
+linkchecker (9.4-1) unstable; urgency=low
 
+  [ Bastian Kleineidam ]
   * New upstream release.
   * Remove build-depend on hardening-wrapper since the appropriate
     GCC environment vars are already set by dh_auto_* helpers.
 
- -- Bastian Kleineidam <calvin@debian.org>  Wed, 06 Aug 2014 19:02:38 +0200
+  [ Antoine Beaupré ]
+  * Take over maintainership
+
+ -- Antoine Beaupré <anarcat@debian.org>  Wed, 11 Apr 2018 20:15:00 -0400
 
 linkchecker (9.3-5) unstable; urgency=medium
 

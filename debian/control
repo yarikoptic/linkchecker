@@ -1,7 +1,7 @@
 Source: linkchecker
 Section: web
 Priority: optional
-Maintainer: Debian QA Group <packages@qa.debian.org>
+Maintainer: Antoine Beaupré <anarcat@debian.org>
 Build-Depends: debhelper (>= 9),
                dh-python,
                gettext,
