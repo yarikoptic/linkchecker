@@ -6,6 +6,13 @@ linkchecker (9.4-1) UNRELEASED; urgency=low
 
  -- Bastian Kleineidam <calvin@debian.org>  Wed, 06 Aug 2014 19:02:38 +0200
 
+linkchecker (9.3-5) unstable; urgency=medium
+
+  * QA upload.
+  * Add another patch to make SSL work with requests >= 2.1.5.
+
+ -- Vincent Bernat <bernat@debian.org>  Sat, 18 Nov 2017 13:35:07 +0100
+
 linkchecker (9.3-4) unstable; urgency=medium
 
   * QA upload.
