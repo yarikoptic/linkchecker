@@ -1,4 +1,4 @@
-# watch control file for uscan
+# Compulsory line, this is a version 3 file
 version=3
-opts=filenamemangle=s/.+\/v?(\d\S*)\.tar\.gz/linkchecker-$1\.tar\.gz/ \
-  https://github.com/wummel/linkchecker/tags .*/v?(\d\S*)\.tar\.gz
+
+https://github.com/linkcheck/linkchecker/tags .*/archive/v?((?:\d+\.?)*)\.tar\.gz
