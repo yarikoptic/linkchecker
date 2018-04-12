@@ -10,7 +10,7 @@ Bug-Debian: https://bugs.debian.org/772947
      subject, subjectAltName and optional notAfter.
      """
 -    from requests.packages.urllib3.contrib.pyopenssl import get_subj_alt_name
-+    import requests.packages.urllib3.contrib.pyopenssl as SSL
++    import urllib3.contrib.pyopenssl as SSL
      res = {
              'subject': (
                  (('commonName', x509.get_subject().CN),),

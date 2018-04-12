@@ -6,6 +6,14 @@ linkchecker (9.4-1) UNRELEASED; urgency=low
 
  -- Bastian Kleineidam <calvin@debian.org>  Wed, 06 Aug 2014 19:02:38 +0200
 
+linkchecker (9.3-4) unstable; urgency=medium
+
+  * QA upload.
+  * Update SSL patch which was broken after unbundling in
+    python-requests. Related to #772947.
+
+ -- Vincent Bernat <bernat@debian.org>  Sat, 23 Jul 2016 14:42:30 +0200
+
 linkchecker (9.3-3) unstable; urgency=medium
 
   * QA upload.
@@ -32,7 +40,7 @@ linkchecker (9.3-2) unstable; urgency=medium
 linkchecker (9.3-1.1) unstable; urgency=medium
 
   * Non-maintainer upload.
-  * fix HTTPS checks (Closes: #772947)
+  * Fix HTTPS checks (Closes: #772947)
 
  -- Antoine Beaupré <anarcat@debian.org>  Thu, 19 May 2016 14:53:14 -0400
 
@@ -1794,6 +1802,4 @@ linkchecker (1.1.4) unstable; urgency=low
 7.1.2000 Version 0.0.1
 	* Option processing
 
-Local variables:
-mode: debian-changelog
-End:
+
