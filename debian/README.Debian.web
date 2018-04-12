@@ -11,3 +11,9 @@ per request. After that, checking will be aborted.
 If you want to change this limit, look in the file
 /usr/share/pyshared/linkcheck/lc_cgi.py and adjust
 the variable MAX_REQUEST_SECONDS.
+
+For the HTML files in the lconline directory to work, your web server
+must have mod_negotiation enabled.
+
+Or you can just remove the .XY suffixes from the language-specific
+files.
