@@ -6,7 +6,6 @@
 override_dh_auto_configure:
 # make sure docs are generated and the manifest is built
 	$(MAKE) locale
-	$(MAKE) -C doc/html all
 	python setup.py sdist --manifest-only
 
 override_dh_auto_build:
