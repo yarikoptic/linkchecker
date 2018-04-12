@@ -1,0 +1,24 @@
+Description: fix https URLs
+
+Forwarded: https://github.com/wummel/linkchecker/pull/656
+Bug-Debian: https://bugs.debian.org/772947
+
+--- ./linkcheck/httputil.py.orig	2016-05-19 13:55:28.394288815 -0400
++++ ./linkcheck/httputil.py	2016-05-19 13:55:56.864516520 -0400
+@@ -32,14 +32,14 @@
+     """Parse a x509 pyopenssl object to a dictionary with keys
+     subject, subjectAltName and optional notAfter.
+     """
+-    from requests.packages.urllib3.contrib.pyopenssl import get_subj_alt_name
++    import requests.packages.urllib3.contrib.pyopenssl as SSL
+     res = {
+             'subject': (
+                 (('commonName', x509.get_subject().CN),),
+             ),
+             'subjectAltName': [
+                 ('DNS', value)
+-                for value in get_subj_alt_name(x509)
++                for value in SSL.get_subj_alt_name(x509)
+             ]
+     }
+     notAfter = x509.get_notAfter()
