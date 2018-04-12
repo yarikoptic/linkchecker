@@ -7,6 +7,7 @@ linkchecker (9.4-1) unstable; urgency=low
 
   [ Antoine Beaupré ]
   * Take over maintainership
+  * Add git-buildpackage configuration
 
  -- Antoine Beaupré <anarcat@debian.org>  Wed, 11 Apr 2018 20:15:00 -0400
 
