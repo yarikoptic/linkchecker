@@ -6,6 +6,14 @@ linkchecker (9.4-1) UNRELEASED; urgency=low
 
  -- Bastian Kleineidam <calvin@debian.org>  Wed, 06 Aug 2014 19:02:38 +0200
 
+linkchecker (9.3-3) unstable; urgency=medium
+
+  * QA upload.
+  * Add call to dh_auto_install in override_dh_auto_install-indep,
+    should make "dpkg-buildpackage -A" to work. Closes: #806069.
+
+ -- Santiago Vila <sanvila@debian.org>  Mon, 18 Jul 2016 14:02:12 +0200
+
 linkchecker (9.3-2) unstable; urgency=medium
 
   * QA upload.

@@ -35,6 +35,7 @@ override_dh_auto_install-arch:
 	install -m 644 build/share/locale/de/LC_MESSAGES/linkchecker.mo $(LOCALEDIR)/de/LC_MESSAGES/
 
 override_dh_auto_install-indep:
+	dh_auto_install --buildsystem python_distutils
 # install CGI files in web package
 	install -m 644 cgi-bin/lconline/*.html $(HTMLDIRWEB)
 	install -m 644 cgi-bin/lconline/*.de $(HTMLDIRWEB)
