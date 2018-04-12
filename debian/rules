@@ -30,7 +30,7 @@ ETCDIRWEB=$(ROOTDIRWEB)/etc
 override_dh_auto_install-arch:
 	dh_auto_install --buildsystem python_distutils
 # install bash_completion script
-	install -m 644 config/linkchecker-completion $(ETCDIR)/bash_completion.d
+	install -m 644 config/linkchecker-completion $(ROOTDIR)/usr/share/bash-completion/completions/
 # install .mo files
 	install -m 644 build/share/locale/de/LC_MESSAGES/linkchecker.mo $(LOCALEDIR)/de/LC_MESSAGES/
 

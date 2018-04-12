@@ -1,5 +1,4 @@
-# LinkChecker-(.*)\.tar\.gz
 # watch control file for uscan
 version=3
-https://pypi.python.org/pypi/LinkChecker/ \
-  https://pypi.python.org/packages/source/L/LinkChecker/LinkChecker-(.*).tar.gz
+opts=filenamemangle=s/.+\/v?(\d\S*)\.tar\.gz/linkchecker-$1\.tar\.gz/ \
+  https://github.com/wummel/linkchecker/tags .*/v?(\d\S*)\.tar\.gz

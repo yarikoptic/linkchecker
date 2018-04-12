@@ -6,6 +6,21 @@ linkchecker (9.4-1) UNRELEASED; urgency=low
 
  -- Bastian Kleineidam <calvin@debian.org>  Wed, 06 Aug 2014 19:02:38 +0200
 
+linkchecker (9.3-2) unstable; urgency=medium
+
+  * QA upload.
+  * Set maintainer to QA Group
+  * Add dh-python to build-deps
+  * Put bash completions in correct location
+  * Removed redundant menu file
+  * Updated watch file
+  * Dropped build-dep on hardening-flags
+  * Dropped unneeded versions on deps
+  * Bumped standards version to 3.9.8
+  * Patch from upstream to fix Python version check (Closes: #826027)
+
+ -- David William Richmond Jones <dwrj87@gmail.com>  Mon, 04 Jul 2016 06:08:23 +0100
+
 linkchecker (9.3-1.1) unstable; urgency=medium
 
   * Non-maintainer upload.

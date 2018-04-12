@@ -1,7 +1,7 @@
+config/create.sql
 doc/examples/check_blacklist.sh
 doc/examples/check_for_x_errors.sh
 doc/examples/check_urls.sh
-doc/examples/linkcheckerrc_loginurl
 doc/examples/filter_xml_output.py
+doc/examples/linkcheckerrc_loginurl
 doc/robots.txt.example
-config/create.sql
