@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2005-2012 Bastian Kleineidam
+# Copyright (C) 2005-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,17 +19,14 @@ File and path utilities.
 """
 
 import os
-import re
 import locale
 import stat
 import fnmatch
-import mimetypes
 import tempfile
 import importlib
 from distutils.spawn import find_executable
 
 from .decorators import memoized
-from . import log, LOG_CHECK
 
 def write_file (filename, content, backup=False, callback=None):
     """Overwrite a possibly existing file with new content. Do this
@@ -60,17 +57,20 @@ def write_file (filename, content, backup=False, callback=None):
         os.remove(filename+".bak")
 
 
-def has_module (name):
+def has_module (name, without_error=True):
     """Test if given module can be imported.
+    @param without_error: True if module must not throw any errors when importing
     @return: flag if import is successful
     @rtype: bool
     """
     try:
         importlib.import_module(name)
         return True
-    except (OSError, ImportError):
-        # some modules (for example HTMLtidy) raise OSError
+    except ImportError:
         return False
+    except Exception:
+        # some modules raise errors when intitializing
+        return not without_error
 
 
 class GlobDirectoryWalker (object):
@@ -184,70 +184,6 @@ def has_changed (filename):
     return mtime > _mtime_cache[key]
 
 
-mimedb = None
-
-def init_mimedb():
-    """Initialize the local MIME database."""
-    global mimedb
-    try:
-        mimedb = mimetypes.MimeTypes(strict=False)
-    except StandardError as msg:
-        log.error(LOG_CHECK, "could not initialize MIME database: %s" % msg)
-        return
-    # For Opera bookmark files (opera6.adr)
-    add_mimetype(mimedb, 'text/plain', '.adr')
-    # To recognize PHP files as HTML with content check.
-    add_mimetype(mimedb, 'application/x-httpd-php', '.php')
-    # To recognize WML files
-    add_mimetype(mimedb, 'text/vnd.wap.wml', '.wml')
-
-
-def add_mimetype(mimedb, mimetype, extension):
-    """Add or replace a mimetype to be used with the given extension."""
-    # If extension is already a common type, strict=True must be used.
-    strict = extension in mimedb.types_map[True]
-    mimedb.add_type(mimetype, extension, strict=strict)
-
-
-# if file extension lookup was unsuccessful, look at the content
-PARSE_CONTENTS = {
-    "text/html": re.compile(r'^(?i)<(!DOCTYPE html|html|head|title)'),
-    "text/plain+opera": re.compile(r'^Opera Hotlist'),
-    "text/plain+chromium": re.compile(r'^{\s*"checksum":'),
-    "text/plain+linkchecker": re.compile(r'(?i)^# LinkChecker URL list'),
-}
-
-def guess_mimetype (filename, read=None):
-    """Return MIME type of file, or 'application/octet-stream' if it could
-    not be determined."""
-    mime, encoding = None, None
-    if mimedb:
-        mime, encoding = mimedb.guess_type(filename, strict=False)
-    basename = os.path.basename(filename)
-    # Special case for Safari Bookmark files
-    if not mime and basename == 'Bookmarks.plist':
-        return 'application/x-plist+safari'
-    # Special case for Google Chrome Bookmark files.
-    if not mime and basename == 'Bookmarks':
-        mime = 'text/plain'
-    # Mime type text/plain can be differentiated further with content reading.
-    if mime == "text/plain" and read is not None:
-        # try to read some content and do a poor man's file(1)
-        try:
-            data = read()[:30]
-            for mime, ro in PARSE_CONTENTS.items():
-                if ro.search(data):
-                    break
-        except Exception:
-            pass
-    if not mime:
-        mime = "application/octet-stream"
-    elif ";" in mime:
-        # split off not needed extension info
-        mime = mime.split(';')[0]
-    return mime.strip().lower()
-
-
 def get_temp_file (mode='r', **kwargs):
     """Return tuple (open file object, filename) pointing to a temporary
     file."""
@@ -272,6 +208,12 @@ def is_accessable_by_others(filename):
     return mode & (stat.S_IRWXG | stat.S_IRWXO)
 
 
+def is_writable_by_others(filename):
+    """Check if file or directory is world writable."""
+    mode = os.stat(filename)[stat.ST_MODE]
+    return mode & stat.S_IWOTH
+
+
 @memoized
 def is_writable(filename):
     """Check if
@@ -283,5 +225,3 @@ def is_writable(filename):
         parentdir = os.path.dirname(filename)
         return os.path.isdir(parentdir) and os.access(parentdir, os.W_OK)
     return os.path.isfile(filename) and os.access(filename, os.W_OK)
-
-init_mimedb()

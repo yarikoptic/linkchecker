@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,10 +16,12 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 """Parse configuration files"""
 
-import ConfigParser
-import re
+try: # Python 3
+    from configparser import RawConfigParser
+except ImportError: # Python 2
+    from ConfigParser import RawConfigParser
 import os
-from .. import LinkCheckerError, get_link_pat, LOG_CHECK, log, fileutil
+from .. import LinkCheckerError, get_link_pat, LOG_CHECK, log, fileutil, plugins, logconf
 
 
 def read_multiline (value):
@@ -31,7 +33,7 @@ def read_multiline (value):
         yield line
 
 
-class LCConfigParser (ConfigParser.RawConfigParser, object):
+class LCConfigParser (RawConfigParser, object):
     """
     Parse a LinkChecker configuration file.
     """
@@ -53,16 +55,17 @@ class LCConfigParser (ConfigParser.RawConfigParser, object):
                 failed_files = set(files) - set(self.read_ok)
                 log.warn(LOG_CHECK, "Could not read configuration files %s.", failed_files)
             # Read all the configuration parameters from the given files.
-            self.read_output_config()
             self.read_checking_config()
             self.read_authentication_config()
             self.read_filtering_config()
+            self.read_output_config()
+            self.read_plugin_config()
         except Exception as msg:
             raise LinkCheckerError(
               _("Error parsing configuration: %s") % unicode(msg))
 
     def read_string_option (self, section, option, allowempty=False):
-        """Read a sring option."""
+        """Read a string option."""
         if self.has_option(section, option):
             value = self.get(section, option)
             if not allowempty and not value:
@@ -91,8 +94,9 @@ class LCConfigParser (ConfigParser.RawConfigParser, object):
     def read_output_config (self):
         """Read configuration options in section "output"."""
         section = "output"
-        from ..logger import Loggers
-        for key in Loggers.keys():
+        from ..logger import LoggerClasses
+        for c in LoggerClasses:
+            key = c.LoggerName
             if self.has_section(key):
                 for opt in self.options(key):
                     self.config[key][opt] = self.get(key, opt)
@@ -105,11 +109,6 @@ class LCConfigParser (ConfigParser.RawConfigParser, object):
             if self.getboolean(section, "verbose"):
                 self.config["verbose"] = True
                 self.config["warnings"] = True
-        if self.has_option(section, "complete"):
-            if self.getboolean(section, "complete"):
-                self.config["complete"] = True
-                self.config["verbose"] = True
-                self.config["warnings"] = True
         if self.has_option(section, "quiet"):
             if self.getboolean(section, "quiet"):
                 self.config['output'] = 'none'
@@ -117,7 +116,7 @@ class LCConfigParser (ConfigParser.RawConfigParser, object):
         if self.has_option(section, "debug"):
             val = self.get(section, "debug")
             parts = [f.strip().lower() for f in val.split(',')]
-            self.config.set_debug(parts)
+            logconf.set_debug(parts)
         self.read_boolean_option(section, "status")
         if self.has_option(section, "log"):
             val = self.get(section, "log").strip().lower()
@@ -127,7 +126,8 @@ class LCConfigParser (ConfigParser.RawConfigParser, object):
             # strip names from whitespace
             loggers = (x.strip().lower() for x in loggers)
             # no file output for the blacklist and none Logger
-            loggers = (x for x in loggers if x in Loggers and
+            from ..logger import LoggerNames
+            loggers = (x for x in loggers if x in LoggerNames and
                        x not in ("blacklist", "none"))
             for val in loggers:
                 output = self.config.logger_new(val, fileoutput=1)
@@ -139,31 +139,25 @@ class LCConfigParser (ConfigParser.RawConfigParser, object):
         self.read_int_option(section, "threads", min=-1)
         self.config['threads'] = max(0, self.config['threads'])
         self.read_int_option(section, "timeout", min=1)
-        self.read_boolean_option(section, "anchors")
+        self.read_int_option(section, "aborttimeout", min=1)
         self.read_int_option(section, "recursionlevel", min=-1)
-        if self.has_option(section, "warningregex"):
-            val = self.get(section, "warningregex")
-            if val:
-                self.config["warningregex"] = re.compile(val)
-        self.read_int_option(section, "warnsizebytes", min=1)
         self.read_string_option(section, "nntpserver")
         self.read_string_option(section, "useragent")
-        self.read_int_option(section, "pause", key="wait", min=0)
-        self.read_check_options(section)
-
-    def read_check_options (self, section):
-        """Read check* options."""
-        self.read_boolean_option(section, "checkhtml")
-        self.read_boolean_option(section, "checkcss")
-        self.read_boolean_option(section, "scanvirus")
-        self.read_boolean_option(section, "clamavconf")
+        self.read_int_option(section, "maxrequestspersecond", min=1)
+        self.read_int_option(section, "maxnumurls", min=0)
+        self.read_int_option(section, "maxfilesizeparse", min=1)
+        self.read_int_option(section, "maxfilesizedownload", min=1)
+        if self.has_option(section, "allowedschemes"):
+            self.config['allowedschemes'] = [x.strip().lower() for x in \
+                 self.get(section, 'allowedschemes').split(',')]
         self.read_boolean_option(section, "debugmemory")
-        if self.has_option(section, "cookies"):
-            self.config["sendcookies"] = self.config["storecookies"] = \
-                self.getboolean(section, "cookies")
         self.read_string_option(section, "cookiefile")
+        self.read_boolean_option(section, "robotstxt")
         self.read_string_option(section, "localwebroot")
-        self.read_int_option(section, "warnsslcertdaysvalid", min=1)
+        try:
+            self.read_boolean_option(section, "sslverify")
+        except ValueError:
+            self.read_string_option(section, "sslverify")
         self.read_int_option(section, "maxrunseconds", min=0)
 
     def read_authentication_config (self):
@@ -190,7 +184,6 @@ class LCConfigParser (ConfigParser.RawConfigParser, object):
                 raise LinkCheckerError(_("invalid login URL `%s'. Only " \
                   "HTTP and HTTPS URLs are supported.") % val)
             self.config["loginurl"] = val
-            self.config["storecookies"] = self.config["sendcookies"] = True
         self.read_string_option(section, "loginuserfield")
         self.read_string_option(section, "loginpasswordfield")
         # read login extra fields
@@ -223,7 +216,7 @@ class LCConfigParser (ConfigParser.RawConfigParser, object):
         """
         section = "filtering"
         if self.has_option(section, "ignorewarnings"):
-            self.config['ignorewarnings'] = [f.strip() for f in \
+            self.config['ignorewarnings'] = [f.strip().lower() for f in \
                  self.get(section, 'ignorewarnings').split(',')]
         if self.has_option(section, "ignore"):
             for line in read_multiline(self.get(section, "ignore")):
@@ -236,3 +229,14 @@ class LCConfigParser (ConfigParser.RawConfigParser, object):
         if self.has_option(section, "internlinks"):
             pat = get_link_pat(self.get(section, "internlinks"))
             self.config["internlinks"].append(pat)
+        self.read_boolean_option(section, "checkextern")
+
+    def read_plugin_config(self):
+        """Read plugin-specific configuration values."""
+        folders = self.config["pluginfolders"]
+        modules = plugins.get_plugin_modules(folders)
+        for pluginclass in plugins.get_plugin_classes(modules):
+            section = pluginclass.__name__
+            if self.has_section(section):
+                self.config["enabledplugins"].append(section)
+                self.config[section] = pluginclass.read_config(self)

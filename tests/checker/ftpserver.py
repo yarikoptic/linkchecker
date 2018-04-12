@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2010-2012 Bastian Kleineidam
+# Copyright (C) 2010-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@ Define http test support classes for LinkChecker tests.
 import os
 import time
 import threading
+import pytest
 from ftplib import FTP
 from . import LinkCheckTest
 
@@ -53,7 +54,11 @@ def start_server (host, port):
         if "kill" in msg:
             raise KeyboardInterrupt()
 
-    from pyftpdlib import ftpserver
+    try:
+        from pyftpdlib import ftpserver
+    except ImportError:
+        pytest.skip("pyftpdlib is not available")
+        return
     authorizer = ftpserver.DummyAuthorizer()
     datadir = os.path.join(os.path.dirname(__file__), 'data')
     authorizer.add_anonymous(datadir)

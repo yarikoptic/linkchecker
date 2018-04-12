@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,7 +17,14 @@
 """
 Mixin class for URLs that can be fetched over a proxy.
 """
-import urllib
+try:  # Python 3
+    from urllib import parse
+    from urllib import request
+    from urllib.parse import splitport
+except ImportError:
+    from urllib import splitport
+    import urllib as request
+    import urlparse as parse
 import os
 from .. import LinkCheckerError, log, LOG_CHECK, url as urlutil, httputil
 
@@ -35,33 +42,34 @@ class ProxySupport (object):
         self.proxyauth = None
         if not self.proxy:
             return
-        proxyargs = {"proxy": self.proxy}
-        self.proxytype, self.proxy = urllib.splittype(self.proxy)
+        proxyurl = parse.urlparse(self.proxy)
+        self.proxytype = proxyurl.scheme
         if self.proxytype not in ('http', 'https'):
             # Note that invalid proxies might raise TypeError in urllib2,
             # so make sure to stop checking at this point, not later.
             msg = _("Proxy value `%(proxy)s' must start with 'http:' or 'https:'.") \
-                 % proxyargs
+                 % dict(proxy=proxy)
             raise LinkCheckerError(msg)
-        self.proxy = urllib.splithost(self.proxy)[0]
-        self.proxyauth, self.proxy = urllib.splituser(self.proxy)
         if self.ignore_proxy_host():
             # log proxy without auth info
             log.debug(LOG_CHECK, "ignoring proxy %r", self.proxy)
-            self.add_info(_("Ignoring proxy setting `%(proxy)s'.") % proxyargs)
-            self.proxy = self.proxyauth = None
+            self.add_info(_("Ignoring proxy setting `%(proxy)s'.") %
+                dict(proxy=proxy))
+            self.proxy = None
             return
-        self.add_info(_("Using proxy `%(proxy)s'.") % proxyargs)
-        if self.proxyauth is not None:
-            if ":" not in self.proxyauth:
-                self.proxyauth += ":"
-            self.proxyauth = httputil.encode_base64(self.proxyauth)
-            self.proxyauth = "Basic "+self.proxyauth
         log.debug(LOG_CHECK, "using proxy %r", self.proxy)
+        self.add_info(_("Using proxy `%(proxy)s'.") % dict(proxy=self.proxy))
+        self.proxyhost = proxyurl.hostname
+        self.proxyport = proxyurl.port
+        if proxyurl.username is not None:
+            username = proxyurl.username
+            password = proxyurl.password if proxy.password is not None else ""
+            auth = "%s:%s" % (username, password)
+            self.proxyauth = "Basic "+httputil.encode_base64(auth)
 
     def ignore_proxy_host (self):
         """Check if self.host is in the $no_proxy ignore list."""
-        if urllib.proxy_bypass(self.host):
+        if request.proxy_bypass(self.host):
             return True
         no_proxy = os.environ.get("no_proxy")
         if no_proxy:
@@ -79,7 +87,8 @@ class ProxySupport (object):
         """
         if self.proxy:
             scheme = self.proxytype
-            host, port = urlutil.splitport(self.proxy)
+            host = self.proxyhost
+            port = self.proxyport
         else:
             scheme = self.scheme
             host = self.host
@@ -89,7 +98,7 @@ class ProxySupport (object):
 
 def parse_host_port (host_port):
     """Parse a host:port string into separate components."""
-    host, port = urllib.splitport(host_port.strip())
+    host, port = splitport(host_port.strip())
     if port is not None:
         if urlutil.is_numeric_port(port):
             port = int(port)

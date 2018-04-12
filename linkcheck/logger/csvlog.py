@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,43 +19,41 @@ A CSV logger.
 """
 import csv
 import os
-import sys
-from . import Logger
+from cStringIO import StringIO
+from . import _Logger
 from .. import strformat
 
 Columns = (
     u"urlname", u"parentname", u"baseref", u"result", u"warningstring",
     u"infostring", u"valid", u"url", u"line", u"column", u"name",
-    u"dltime", u"dlsize", u"checktime", u"cached", u"level", u"modified",
+    u"dltime", u"size", u"checktime", u"cached", u"level", u"modified",
 )
 
 
-class CSVLogger (Logger):
+class CSVLogger (_Logger):
     """
     CSV output, consisting of one line per entry. Entries are
     separated by a separator (a semicolon per default).
     """
 
-    def __init__ (self, **args):
+    LoggerName = "csv"
+
+    LoggerArgs = {
+        "filename": "linkchecker-out.csv",
+        'separator': ';',
+        "quotechar": '"',
+        "dialect": "excel",
+    }
+
+    def __init__ (self, **kwargs):
         """Store default separator and (os dependent) line terminator."""
+        args = self.get_args(kwargs)
         super(CSVLogger, self).__init__(**args)
-        # due to a limitation of the csv module, all output has to be
-        # utf-8 encoded
-        self.output_encoding = "utf-8"
         self.init_fileoutput(args)
         self.separator = args['separator']
         self.quotechar = args['quotechar']
+        self.dialect = args['dialect']
         self.linesep = os.linesep
-
-    def create_fd (self):
-        """Create open file descriptor."""
-        if self.filename is None:
-            return sys.stdout
-        return open(self.filename, "wb")
-
-    def write (self, s, **args):
-        """Write encoded string."""
-        super(CSVLogger, self).write(self.encode(s), **args)
 
     def comment (self, s, **args):
         """Write CSV comment."""
@@ -71,7 +69,8 @@ class CSVLogger (Logger):
         else:
             # write empty string to initialize file output
             self.write(u"")
-        self.writer = csv.writer(self.fd, dialect='excel',
+        self.queue = StringIO()
+        self.writer = csv.writer(self.queue, dialect=self.dialect,
                delimiter=self.separator, lineterminator=self.linesep,
                quotechar=self.quotechar)
         for s in Columns:
@@ -108,7 +107,7 @@ class CSVLogger (Logger):
         if self.has_part("dltime"):
             row.append(url_data.dltime)
         if self.has_part("dlsize"):
-            row.append(url_data.dlsize)
+            row.append(url_data.size)
         if self.has_part("checktime"):
             row.append(url_data.checktime)
         if self.has_part("cached"):
@@ -122,9 +121,16 @@ class CSVLogger (Logger):
 
     def writerow (self, row):
         """Write one row in CSV format."""
-        self.writer.writerow(map(self.encode, row))
+        self.writer.writerow([s.encode("utf-8", self.codec_errors) for s in row])
+        # Fetch UTF-8 output from the queue ...
+        data = self.queue.getvalue()
+        data = data.decode("utf-8")
+        # ... and write to the target stream
+        self.write(data)
+        # empty queue
+        self.queue.truncate(0)
 
-    def end_output (self):
+    def end_output (self, **kwargs):
         """Write end of checking info as csv comment."""
         if self.has_part("outro"):
             self.write_outro()

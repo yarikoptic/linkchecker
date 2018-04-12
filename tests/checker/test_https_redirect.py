@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2004-2012 Bastian Kleineidam
+# Copyright (C) 2004-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,17 +29,17 @@ class TestHttpsRedirect (HttpServerTest):
     def test_redirect (self):
         url = u"http://localhost:%d/redirect1" % self.port
         nurl = url
-        rurl = u"https://localhost:%d/newurl1" % self.port
+        #rurl = u"https://localhost:%d/newurl1" % self.port
         resultlines = [
             u"url %s" % url,
             u"cache key %s" % nurl,
             u"real url %s" % url,
-            u"info Redirected to `%s'." % rurl.replace('http:', 'https:'),
-            u"warning Redirection to URL `%s' with different scheme found; the original URL was `%s'." % (rurl.replace('http:', 'https:'), nurl),
-            u"valid",
-            u"url %s" % rurl,
-            u"cache key %s" % rurl,
-            u"real url %s" % rurl,
+            # XXX the redirect fails because this is not an SSL server
+            #u"info Redirected to `%s'." % rurl.replace('http:', 'https:'),
+            #u"valid",
+            #u"url %s" % rurl,
+            #u"cache key %s" % rurl,
+            #u"real url %s" % rurl,
             u"error",
         ]
         self.direct(url, resultlines, recursionlevel=0)

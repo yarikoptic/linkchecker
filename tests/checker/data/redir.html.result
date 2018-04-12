@@ -1,13 +1,11 @@
 url http://localhost:%(port)d/%(datadir)s/redir.html
 cache key http://localhost:%(port)d/%(datadir)s/redir.html
 real url http://localhost:%(port)d/%(datadir)s/redir.html
-info 1 URL parsed.
 valid
 
 url redirect_newhost.html
 cache key http://localhost:%(port)d/%(datadir)s/redirect_newhost.html
-real url http://www.iana.org/domains/example/
+real url http://www.example.com/
 name redirect to new host
 info Redirected to `http://www.example.com/'.
-info Redirected to `http://www.iana.org/domains/example/'.
 valid

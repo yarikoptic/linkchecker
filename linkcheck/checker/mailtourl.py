@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,17 +20,18 @@ Handle for mailto: links.
 
 import re
 import urllib
-import urlparse
-import smtplib
-import socket
+try:
+    import urlparse
+except ImportError:
+    # Python 3
+    from urllib import parse as urlparse
 from email._parseaddr import AddressList
 
 from . import urlbase
 from .. import log, LOG_CHECK, strformat, url as urlutil
 from dns import resolver
 from ..network import iputil
-from .const import WARN_MAIL_NO_MX_HOST, \
-    WARN_MAIL_UNVERIFIED_ADDRESS, WARN_MAIL_NO_CONNECTION
+from .const import WARN_MAIL_NO_MX_HOST
 
 
 def getaddresses (addr):
@@ -64,7 +65,8 @@ def is_missing_quote (addr):
 
 
 # list of CGI keys to search for email addresses
-EMAIL_CGI = ("to", "cc", "bcc")
+EMAIL_CGI_ADDRESS = ("to", "cc", "bcc")
+EMAIL_CGI_SUBJECT = "subject"
 
 class MailtoUrl (urlbase.UrlBase):
     """
@@ -77,14 +79,15 @@ class MailtoUrl (urlbase.UrlBase):
         """
         super(MailtoUrl, self).build_url()
         self.addresses = set()
+        self.subject = None
         self.parse_addresses()
         if self.addresses:
             for addr in sorted(self.addresses):
                 self.check_email_syntax(addr)
                 if not self.valid:
                     break
-        else:
-            self.add_warning(_("No mail addresses found in `%(url)s'.") % \
+        elif not self.subject:
+            self.add_warning(_("No mail addresses or email subject found in `%(url)s'.") % \
                 {"url": self.url})
 
     def parse_addresses (self):
@@ -119,9 +122,11 @@ class MailtoUrl (urlbase.UrlBase):
             try:
                 headers = urlparse.parse_qs(url[(i+1):], strict_parsing=True)
                 for key, vals in headers.items():
-                    if key.lower() in EMAIL_CGI:
+                    if key.lower() in EMAIL_CGI_ADDRESS:
                         # Only the first header value is added
                         self.addresses.update(getaddresses(urllib.unquote(vals[0])))
+                    if key.lower() == EMAIL_CGI_SUBJECT:
+                        self.subject = vals[0]
             except ValueError as err:
                 self.add_warning(_("Error parsing CGI values: %s") % str(err))
         else:
@@ -226,15 +231,10 @@ class MailtoUrl (urlbase.UrlBase):
         Verify a list of email addresses. If one address fails,
         the whole list will fail.
 
-        For each mail address we check the following things:
-          1. Look up the MX DNS records. If we found no MX record,
-             print an error.
-          2. Check if one of the mail hosts accept an SMTP connection.
-             Check hosts with higher priority first.
-             If no host accepts SMTP, we print a warning.
-          3. Try to verify the address with the VRFY command. If we got
-             an answer, print the verified address as an info.
-             If not, print a warning.
+        For each mail address the MX DNS records are found.
+        If no MX records are found, print a warning and try
+        to look for A DNS records. If no A records are found either
+        print an error.
         """
         for mail in sorted(self.addresses):
             self.check_smtp_domain(mail)
@@ -287,87 +287,16 @@ class MailtoUrl (urlbase.UrlBase):
         # debug output
         log.debug(LOG_CHECK, "found %d MX mailhosts:", len(answers))
         for preference, host in mxdata:
-            log.debug(LOG_CHECK,
-                "MX host %r, preference %d", host, preference)
-        # connect
-        self.check_smtp_connect(mxdata, username, domain)
-
-    def check_smtp_connect (self, mxdata, username, domain):
-        """
-        Connect to SMTP servers and check emails.
-
-        @param mxdata: list of (preference, host) tuples to check for
-        @type mxdata: list
-        @param username: the username to verify
-        @type username: string
-        """
-        smtpconnect = 0
-        for preference, host in mxdata:
-            try:
-                log.debug(LOG_CHECK,
-                    "SMTP check for %r (preference %d)", host, preference)
-                self.url_connection = smtplib.SMTP(timeout=self.aggregate.config["timeout"])
-                if log.is_debug(LOG_CHECK):
-                    self.url_connection.set_debuglevel(1)
-                self.url_connection.connect(host)
-                log.debug(LOG_CHECK, "SMTP connected!")
-                smtpconnect = 1
-                self.url_connection.helo()
-                mailaddress = "%s@%s" % (username, domain)
-                status, info = self.url_connection.verify(mailaddress)
-                log.debug(LOG_CHECK, "SMTP info %d %r", status, info)
-                d = {
-                    'info': "%d %s" % (status, str(info)),
-                    'mail': mailaddress,
-                }
-                if status == 250:
-                    self.add_info(_("Verified address %(mail)s: %(info)s.") % d)
-                # check for 25x status code which means that the address
-                # could not be verified, but is sent anyway
-                elif 250 < status < 260:
-                    self.add_info(_("Unverified but presumably valid"
-                                    " address %(mail)s: %(info)s.") % d)
-                else:
-                    self.add_warning(_("Unverified address: %(info)s.") % d,
-                     tag=WARN_MAIL_UNVERIFIED_ADDRESS)
-            except smtplib.SMTPException as msg:
-                self.add_warning(
-                      _("MX mail host %(host)s did not accept connections: "
-                        "%(error)s.") % {'host': host, 'error': str(msg)},
-                        tag=WARN_MAIL_NO_CONNECTION)
-            if smtpconnect:
-                break
-        if not smtpconnect:
-            self.set_result(_("Could not connect, but syntax is correct"),
-                overwrite=True)
-        else:
-            self.set_result(_("Found MX mail host %(host)s") % {'host': host},
-                overwrite=True)
-
-    def close_connection (self):
-        """
-        Close a possibly opened SMTP connection.
-        """
-        if self.url_connection is None:
-            # no connection is open
-            return
-        connection = self.url_connection
-        self.url_connection = None
-        try:
-            connection.quit()
-        except (smtplib.SMTPException, socket.error):
-            # ignore close errors
-            # socket.error is raised for example on timeouts
+            log.debug(LOG_CHECK, "MX host %r, preference %d", host, preference)
             pass
+        self.set_result(_("Valid mail address syntax"))
 
-    def set_cache_keys (self):
+    def set_cache_url(self):
         """
-        The cache key is a comma separated list of emails.
+        The cache url is a comma separated list of emails.
         """
         emails = u",".join(sorted(self.addresses))
-        self.cache_url_key = u"%s:%s" % (self.scheme, emails)
-        assert isinstance(self.cache_url_key, unicode), self.cache_url_key
-        # cache_content_key remains None, recursion is not allowed
+        self.cache_url = u"%s:%s" % (self.scheme, emails)
 
     def can_get_content (self):
         """

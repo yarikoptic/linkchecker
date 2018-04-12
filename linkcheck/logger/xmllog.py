@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2011 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@ Base class for XML loggers.
 """
 
 import xml.sax.saxutils
-from . import Logger
+from . import _Logger
 
 
 xmlattr_entities = {
@@ -44,14 +44,13 @@ def xmlquoteattr (s):
     return xml.sax.saxutils.escape(s, xmlattr_entities)
 
 
-class XMLLogger (Logger):
+class _XMLLogger (_Logger):
     """Base class for XML output; easy to parse with any XML tool."""
 
-    def __init__ (self, **args):
-        """
-        Initialize graph node list and internal id counter.
-        """
-        super(XMLLogger, self).__init__(**args)
+    def __init__ (self, **kwargs):
+        """ Initialize graph node list and internal id counter. """
+        args = self.get_args(kwargs)
+        super(_XMLLogger, self).__init__(**args)
         self.init_fileoutput(args)
         self.indent = u"  "
         self.level = 0

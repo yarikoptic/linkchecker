@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,11 +19,6 @@
 Setup file for the distuils module.
 
 It includes the following features:
-- py2exe support (including InnoScript installer generation)
-- py2app support (including DMG package generation)
-- cx_Freeze support
-- Qt plugin installation for py2exe and py2app
-- Microsoft Visual C++ DLL installation for py2exe
 - creation and installation of configuration files with installation data
 - automatic detection and usage of GNU99 standard for C compiler
 - automatic MANIFEST.in check
@@ -45,111 +40,38 @@ import subprocess
 import stat
 import glob
 import shutil
-
-# if a frozen Unix application should be built with cx_Freeze
-do_freeze = int(os.environ.get('LINKCHECKER_FREEZE', '0'))
+try:
+    unicode
+except NameError:
+    unicode = lambda x: x
 
 # import Distutils stuff
-try:
-    # setuptools (which is needed by py2app) monkey-patches the
-    # distutils.core.Command class.
-    # So we need to import it before importing the distutils core
-    import setuptools
-except ImportError:
-    # ignore when setuptools is not installed
-    pass
-if do_freeze:
-    from cx_Freeze import setup, Executable
-else:
-    from distutils.core import setup
+from setuptools import setup
 from distutils.core import Extension
 from distutils.command.install_lib import install_lib
 from distutils.command.build_ext import build_ext
 from distutils.command.sdist import sdist
 from distutils.command.clean import clean
 from distutils.command.install_data import install_data
-from distutils.command.register import register
 from distutils.dir_util import remove_tree
 from distutils.file_util import write_file
-from distutils.spawn import find_executable
 from distutils import util, log
-try:
-    # py2exe monkey-patches the distutils.core.Distribution class
-    # So we need to import it before importing the Distribution class
-    import py2exe
-    has_py2exe = True
-except ImportError:
-    # py2exe is not installed
-    has_py2exe = False
-if do_freeze:
-    from cx_Freeze.dist import Distribution, build, install_exe
-    executables = [Executable("linkchecker"), Executable("linkchecker-gui")]
-else:
-    from distutils.core import Distribution
-    from distutils.command.build import build
-    executables = None
-try:
-    import py2app
-    has_py2app = True
-except ImportError:
-    # py2app is not installed
-    has_py2app = False
+from distutils.core import Distribution
+from distutils.command.build import build
 
 # the application version
-AppVersion = "8.3"
+AppVersion = "9.4.0"
 # the application name
 AppName = "LinkChecker"
+Description = "check links in web documents or full websites"
 
-# Microsoft Visual C++ runtime version (tested with Python 2.7.2)
-MSVCP90Version = '9.0.30729.6161'
-MSVCP90Suffix = 'x-ww_31a54e43'
-MSVCP90Token = '1fc8b3b9a1e18e3b'
-
-# basic includes for py2exe and py2app
-py_includes = ['dns.rdtypes.IN.*', 'dns.rdtypes.ANY.*',
-    'twill.extensions.*', 'twill.extensions.match_parse.*',
-    'twill.other_packages.*', 'twill.other_packages._mechanize_dist.*',
-    'cssutils.scripts.*']
-# basic excludes for py2exe and py2app
-py_excludes = ['doctest', 'unittest', 'optcomplete', 'Tkinter',
-    'PyQt4.QtDesigner', 'PyQt4.QtNetwork', 'PyQt4.QtOpenGL',
-    'PyQt4.QtScript', 'PyQt4.QtTest', 'PyQt4.QtWebKit', 'PyQt4.QtXml',
-    'PyQt4.phonon']
-# py2exe options for Windows packaging
-py2exe_options = dict(
-    packages=["encodings"],
-    excludes=py_excludes + ['win32com.gen_py'],
-    # silence py2exe error about not finding msvcp90.dll
-    dll_excludes=['MSVCP90.dll'],
-    # add sip so that PyQt4 works
-    # add PyQt4.QtSql so that sqlite needed by QHelpCollection works
-    includes=py_includes + ["sip", "PyQt4.QtSql"],
-    compressed=1,
-    optimize=2,
-)
-# py2app options for OSX packaging
-py2app_options = dict(
-    includes=py_includes + ['sip', 'PyQt4',
-      'PyQt4.QtCore', 'PyQt4.QtGui', 'PyQt4.QtSql'],
-    excludes=py_excludes,
-    strip=True,
-    optimize=2,
-    iconfile='doc/html/favicon.icns',
-    plist={
-        'CFBundleIdentifier': 'org.pythonmac.%s' % AppName,
-        'CFBundleIconFile': 'favicon.icns',
-    },
-    argv_emulation=True,
-)
-# cx_Freeze for Linux RPM packaging
-cx_includes = [x[:-2] for x in py_includes]
-cxfreeze_options = dict(
-    packages=["encodings"],
-    excludes=py_excludes,
-    includes=cx_includes + ['sip', 'PyQt4',
-      'PyQt4.QtCore', 'PyQt4.QtGui', 'PyQt4.QtSql'],
-)
-
+def get_long_description():
+    """Try to read long description from README.rst."""
+    try:
+        with open('README.rst') as f:
+            return f.read()
+    except:
+        return Description
 
 def normpath (path):
     """Norm a path name to platform specific notation."""
@@ -165,21 +87,6 @@ def cnormpath (path):
     if not os.path.isabs(path):
         path = normpath(os.path.join(sys.prefix, path))
     return path
-
-
-def get_nt_platform_vars ():
-    """Return program file path and architecture for NT systems."""
-    platform = util.get_platform()
-    if platform == "win-amd64":
-        # the Visual C++ runtime files are installed in the x86 directory
-        progvar = "%ProgramFiles(x86)%"
-        architecture = "amd64"
-    elif platform == "win32":
-        progvar = "%ProgramFiles%"
-        architecture = "x86"
-    else:
-        raise ValueError("Unsupported platform %r" % platform)
-    return os.path.expandvars(progvar), architecture
 
 
 release_ro = re.compile(r"\(released (.+)\)")
@@ -199,128 +106,6 @@ def get_release_date ():
 def get_portable():
     """Return portable flag as string."""
     return os.environ.get('LINKCHECKER_PORTABLE', '0')
-
-
-def get_qt_plugin_dir_win ():
-    """Get Qt plugin dir on Windows systems."""
-    import PyQt4
-    return os.path.join(os.path.dirname(PyQt4.__file__), "plugins")
-
-
-def get_qt_plugin_dir_osx ():
-    """Get Qt plugin dir on OSX systems."""
-    # note: works on Qt installed with homebrew
-    qtbindir = os.path.dirname(os.path.realpath(find_executable("qmake")))
-    return os.path.join(os.path.dirname(qtbindir), "plugins")
-
-
-def add_qt_plugin_file (files, plugin_dir, dirname, filename):
-    """Add one Qt plugin file to list of data files."""
-    files.append((dirname, [os.path.join(plugin_dir, dirname, filename)]))
-
-
-def add_qt_plugin_files (files):
-    """Add needed Qt plugins to list of data files. Filename prefix and
-    suffix are different for Windows and OSX."""
-    if os.name == 'nt':
-        plugin_dir = get_qt_plugin_dir_win()
-        args = ("", "4.dll")
-    elif sys.platform == 'darwin':
-        plugin_dir = get_qt_plugin_dir_osx()
-        args = ("lib", ".dylib")
-    else:
-        raise ValueError("unsupported qt plugin platform")
-    # Copy needed sqlite plugin files to distribution directory.
-    add_qt_plugin_file(files, plugin_dir, "sqldrivers", "%sqsqlite%s" % args)
-    # Copy needed gif image plugin files to distribution directory.
-    add_qt_plugin_file(files, plugin_dir, "imageformats", "%sqgif%s" % args)
-
-
-def fix_qt_plugins_py2app (dist_dir):
-    """Fix Qt plugin files installed in data_dir by moving them to
-    app_dir/Plugins and change the install_name."""
-    app_dir = os.path.join(dist_dir, '%s.app' % AppName, 'Contents')
-    plugin_dir = os.path.join(app_dir, 'Plugins')
-    data_dir = os.path.join(app_dir, 'Resources')
-    qt_lib_dir = os.path.join(os.path.dirname(get_qt_plugin_dir_osx()), 'lib')
-    # make target plugin directory
-    os.mkdir(plugin_dir)
-    qt_plugins = ('sqldrivers', 'imageformats')
-    qt_modules = ('QtCore', 'QtGui', 'QtSql')
-    for plugin in qt_plugins:
-        target_dir = os.path.join(plugin_dir, plugin)
-        # move libraries
-        os.rename(os.path.join(data_dir, plugin), target_dir)
-        # fix libraries
-        for library in glob.glob("%s/*.dylib" % target_dir):
-            for module in qt_modules:
-                libpath = "%s.framework/Versions/4/%s" % (module, module)
-                oldpath = os.path.join(qt_lib_dir, libpath)
-                newpath = '@executable_path/../Frameworks/%s' % libpath
-                args = ['install_name_tool', '-change', oldpath, newpath, library]
-                subprocess.check_call(args)
-
-
-def generate_dmg_image (dist_dir):
-    """Generate .dmg image."""
-    imgPath = os.path.join(dist_dir, "%s-%s.dmg" % (AppName, AppVersion))
-    tmpImgPath = os.path.join(dist_dir, "%s.tmp.dmg" % AppName)
-    print("*** generating temporary DMG image ***")
-    args = ['hdiutil', 'create', '-srcfolder', dist_dir, '-fs', 'HFSX',
-            '-volname', AppName, '-format', 'UDZO', tmpImgPath]
-    subprocess.check_call(args)
-    print("*** generating final DMG image ***")
-    args = ['hdiutil', 'convert', tmpImgPath, '-format', 'UDZO',
-            '-imagekey', 'zlib-level=9', '-o', imgPath]
-    subprocess.check_call(args)
-    os.remove(tmpImgPath)
-
-
-def sign_the_code (dist_dir):
-    """Sign the OSX application code."""
-    app_dir = os.path.join(dist_dir, "%s.app" % AppName)
-    args = ['codesign', '-s', myname, '-v', app_dir]
-    print("*** signing the application code ***")
-    subprocess.check_call(args)
-
-
-def add_tidy_files (files):
-    """Add C tidy library used with ctypes."""
-    libname = "cygtidy"
-    libver = "0-99-0"
-    lib = "%s-%s.dll" % (libname, libver)
-    import tidy
-    filename = os.path.join(os.path.dirname(tidy.__file__), lib)
-    files.append(('', [filename]))
-
-
-def add_msvc_files (files):
-    """Add needed MSVC++ runtime files. Only Version 9.0.21022.8 is tested
-    and can be downloaded here:
-    http://www.microsoft.com/en-us/download/details.aspx?id=5582
-    """
-    prog_dir, architecture = get_nt_platform_vars()
-    dirname = "Microsoft.VC90.CRT"
-    version = "%s_%s_%s" % (MSVCP90Token, MSVCP90Version, MSVCP90Suffix)
-    args = (architecture, dirname, version)
-    path = r'C:\Windows\WinSxS\%s_%s_%s\*.*' % args
-    files.append((dirname, glob.glob(path)))
-    # Copy the manifest file into the build directory and rename it
-    # because it must have the same name as the directory.
-    path = r'C:\Windows\WinSxS\Manifests\%s_%s_%s.manifest' % args
-    target = os.path.join(os.getcwd(), 'build', '%s.manifest' % dirname)
-    shutil.copy(path, target)
-    files.append((dirname, [target]))
-
-
-def insert_dns_path():
-    """Let py2exe find the dns package."""
-    lib_dir = "lib.%s-%s" % (util.get_platform(), sys.version[0:3])
-    if hasattr(sys, 'gettotalrefcount'):
-        lib_dir += '-pydebug'
-    dnspath = os.path.abspath(os.path.join('build', lib_dir, 'linkcheck_dns'))
-    if dnspath not in sys.path:
-        sys.path.insert(0, dnspath)
 
 
 class MyInstallLib (install_lib, object):
@@ -376,24 +161,48 @@ class MyInstallLib (install_lib, object):
     def get_outputs (self):
         """Add the generated config file to the list of outputs."""
         outs = super(MyInstallLib, self).get_outputs()
-        outs.append(self.get_conf_output())
+        conf_output = self.get_conf_output()
+        outs.append(conf_output)
+        if self.compile:
+            outs.extend(self._bytecode_filenames([conf_output]))
         return outs
 
 
 class MyInstallData (install_data, object):
-    """Handle locale files and permissions."""
+    """Fix file permissions."""
 
     def run (self):
         """Adjust permissions on POSIX systems."""
-        self.add_message_files()
+        self.install_translations()
         super(MyInstallData, self).run()
         self.fix_permissions()
 
-    def add_message_files (self):
-        """Add locale message files to data_files list."""
-        for (src, dst) in list_message_files(self.distribution.get_name()):
-            dstdir = os.path.dirname(dst)
-            self.data_files.append((dstdir, [os.path.join("build", dst)]))
+    def install_translations (self):
+        """Install compiled gettext catalogs."""
+        # A hack to fix https://github.com/linkcheck/linkchecker/issues/102
+        i18n_files = []
+        data_files = []
+        for dir, files in self.data_files:
+            if 'LC_MESSAGES' in dir:
+                i18n_files.append((dir, files))
+            else:
+                data_files.append((dir, files))
+        self.data_files = data_files
+        # We do almost the same thing that install_data.run() does, except
+        # we can assume everything in self.data_files is a (dir, files) tuple,
+        # and all files lists are non-empty.  And for i18n files, instead of
+        # specifying the directory we instead specify the destination filename.
+        for dest, files in i18n_files:
+            dest = util.convert_path(dest)
+            if not os.path.isabs(dest):
+                dest = os.path.join(self.install_dir, dest)
+            elif self.root:
+                dest = util.change_root(self.root, dest)
+            self.mkpath(os.path.dirname(dest))
+            for data in files:
+                data = util.convert_path(data)
+                (out, _) = self.copy_file(data, dest)
+                self.outfiles.append(out)
 
     def fix_permissions (self):
         """Set correct read permissions on POSIX systems. Might also
@@ -404,37 +213,10 @@ class MyInstallData (install_data, object):
             for path in self.get_outputs():
                 mode = os.stat(path)[stat.ST_MODE]
                 if stat.S_ISDIR(mode):
-                    mode |= 011
-                mode |= 044
+                    mode |= 0o11
+                mode |= 0o44
                 os.chmod(path, mode)
 
-
-# Microsoft application manifest for linkchecker-gui.exe; see also
-# http://msdn.microsoft.com/en-us/library/aa374191%28VS.85%29.aspx
-app_manifest = """
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<assembly xmlns="urn:schemas-microsoft-com:asm.v1"
-manifestVersion="1.0">
-<assemblyIdentity
-    type="win32"
-    name="%(appname)s"
-    version="%(appversion)s.0.0"
-    processorArchitecture="*"
-/>
-<dependency>
-  <dependentAssembly>
-    <assemblyIdentity
-      type="win32"
-      name="Microsoft.VC90.CRT"
-      version="%(msvcrtversion)s"
-      processorArchitecture="*"
-      publicKeyToken="%(msvcrttoken)s">
-    </assemblyIdentity>
-  </dependentAssembly>
-</dependency>
-</assembly>
-""" % dict(appversion=AppVersion, appname=AppName,
-           msvcrtversion=MSVCP90Version, msvcrttoken=MSVCP90Token)
 
 class MyDistribution (Distribution, object):
     """Custom distribution class generating config file."""
@@ -443,11 +225,6 @@ class MyDistribution (Distribution, object):
         """Set console and windows scripts."""
         super(MyDistribution, self).__init__(attrs)
         self.console = ['linkchecker']
-        self.windows = [{
-            "script": "linkchecker-gui",
-            "icon_resources": [(1, "doc/html/favicon.ico")],
-            "other_resources": [(24, 1, app_manifest)],
-        }]
 
     def run_commands (self):
         """Generate config file and run commands."""
@@ -497,7 +274,7 @@ def cc_run (args):
     @return: successful exit flag
     @rtype: bool
     """
-    prog = "int main(){}\n"
+    prog = b"int main(){}\n"
     pipe = subprocess.Popen(args,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, close_fds=True)
     pipe.communicate(input=prog)
@@ -535,7 +312,7 @@ class MyBuildExt (build_ext, object):
             self.build_extension(ext)
 
 
-def list_message_files (package, suffix=".po"):
+def list_message_files (package, suffix=".mo"):
     """Return list of all found message files and their installation paths."""
     for fname in glob.glob("po/*" + suffix):
         # basename (without extension) is a locale name
@@ -569,21 +346,9 @@ def check_manifest ():
 class MyBuild (build, object):
     """Custom build command."""
 
-    def build_message_files (self):
-        """For each po/*.po, build .mo file in target locale directory."""
-        # msgfmt.py is in the po/ subdirectory
-        sys.path.append('po')
-        import msgfmt
-        for (src, dst) in list_message_files(self.distribution.get_name()):
-            build_dst = os.path.join("build", dst)
-            self.mkpath(os.path.dirname(build_dst))
-            self.announce("Compiling %s -> %s" % (src, build_dst))
-            msgfmt.make(src, build_dst)
-
     def run (self):
-        """Check MANIFEST and build message files before building."""
+        """Check MANIFEST before building."""
         check_manifest()
-        self.build_message_files()
         build.run(self)
 
 
@@ -622,7 +387,7 @@ library_dirs = []
 # libraries
 libraries = []
 # scripts
-scripts = ['linkchecker', 'linkchecker-gui', 'linkchecker-nagios']
+scripts = ['linkchecker']
 
 if os.name == 'nt':
     # windows does not have unistd.h
@@ -630,13 +395,15 @@ if os.name == 'nt':
 else:
     extra_compile_args.append("-pedantic")
 
+if sys.platform == 'darwin':
+    define_macros.extend([('HAVE_STRLCPY', None), ('HAVE_STRLCAT', None)])
+
 myname = "Bastian Kleineidam"
 myemail = "bastian.kleineidam@web.de"
 
 data_files = [
     ('share/linkchecker',
-        ['config/linkcheckerrc', 'config/ca-certificates.crt',
-        'doc/html/lccollection.qhc', 'doc/html/lcdoc.qch']),
+        ['config/linkcheckerrc']),
     ('share/linkchecker/examples',
         ['cgi-bin/lconline/leer.html.en',
          'cgi-bin/lconline/leer.html.de',
@@ -649,10 +416,13 @@ data_files = [
         ]),
 ]
 
+for (src, dst) in list_message_files(AppName):
+    data_files.append((dst, [src]))
+
 if os.name == 'posix':
-    data_files.append(('share/man/man1', ['doc/en/linkchecker.1', 'doc/en/linkchecker-gui.1']))
+    data_files.append(('share/man/man1', ['doc/en/linkchecker.1']))
     data_files.append(('share/man/man5', ['doc/en/linkcheckerrc.5']))
-    data_files.append(('share/man/de/man1', ['doc/de/linkchecker.1', 'doc/de/linkchecker-gui.1']))
+    data_files.append(('share/man/de/man1', ['doc/de/linkchecker.1']))
     data_files.append(('share/man/de/man5', ['doc/de/linkcheckerrc.5']))
     data_files.append(('share/linkchecker/examples',
               ['config/linkchecker-completion',
@@ -660,232 +430,19 @@ if os.name == 'posix':
                'doc/examples/check_for_x_errors.sh',
                'doc/examples/check_urls.sh']))
     data_files.append(('share/applications', ['doc/linkchecker.desktop']))
-    data_files.append(('share/applications', ['doc/linkchecker-gui.desktop']))
-if 'py2app' in sys.argv[1:]:
-    if not has_py2app:
-        raise SystemExit("py2app module could not be imported.")
-    # add Qt plugins which are later fixed by fix_qt_plugins_py2app()
-    add_qt_plugin_files(data_files)
-    # needed for Qt to load the plugins
-    data_files.append(('', ['osx/qt.conf']))
-elif 'py2exe' in sys.argv[1:]:
-    if not has_py2exe:
-        raise SystemExit("py2exe module could not be imported")
-    add_qt_plugin_files(data_files)
-    add_msvc_files(data_files)
-    add_tidy_files(data_files)
-    insert_dns_path()
-elif do_freeze:
-    class MyInstallExe (install_exe, object):
-        """Install cx_Freeze executables."""
-        def run (self):
-            """Add generated configuration to output files."""
-            super(MyInstallExe, self).run()
-            cmd_obj = self.distribution.get_command_obj("install_lib")
-            cmd_obj.ensure_finalized()
-            self.outfiles.append(cmd_obj.get_conf_output()+"c")
-
-
-class InnoScript:
-    """Class to generate INNO script."""
-
-    def __init__(self, lib_dir, dist_dir, windows_exe_files=[],
-                 console_exe_files=[], service_exe_files=[],
-                 comserver_files=[], lib_files=[]):
-        """Store INNO script infos."""
-        self.lib_dir = lib_dir
-        self.dist_dir = dist_dir
-        if not self.dist_dir[-1] in "\\/":
-            self.dist_dir += "\\"
-        self.name = AppName
-        self.version = AppVersion
-        self.windows_exe_files = [self.chop(p) for p in windows_exe_files]
-        self.console_exe_files = [self.chop(p) for p in console_exe_files]
-        self.service_exe_files = [self.chop(p) for p in service_exe_files]
-        self.comserver_files = [self.chop(p) for p in comserver_files]
-        self.lib_files = [self.chop(p) for p in lib_files]
-        self.icon = os.path.abspath(r'doc\html\favicon.ico')
-
-    def chop(self, pathname):
-        """Remove distribution directory from path name."""
-        assert pathname.startswith(self.dist_dir)
-        return pathname[len(self.dist_dir):]
-
-    def create(self, pathname=r"dist\omt.iss"):
-        """Create Inno script."""
-        self.pathname = pathname
-        self.distfilebase = "%s-%s" % (self.name, self.version)
-        self.distfile = self.distfilebase + ".exe"
-        with codecs.open(self.pathname, "w", 'utf-8-sig', 'strict') as fd:
-            self.write_inno_script(fd)
-
-    def write_inno_script (self, fd):
-        """Write Inno script contents."""
-        print("; WARNING: This script has been created by py2exe. Changes to this script", file=fd)
-        print("; will be overwritten the next time py2exe is run!", file=fd)
-        print("[Setup]", file=fd)
-        print("AppName=%s" % self.name, file=fd)
-        print("AppVerName=%s %s" % (self.name, self.version), file=fd)
-        print(r"DefaultDirName={pf}\%s" % self.name, file=fd)
-        print("DefaultGroupName=%s" % self.name, file=fd)
-        print("OutputBaseFilename=%s" % self.distfilebase, file=fd)
-        print("OutputDir=..", file=fd)
-        print("SetupIconFile=%s" % self.icon, file=fd)
-        print("UninstallDisplayIcon=%s" % self.icon, file=fd)
-        print(file=fd)
-        # Customize some messages
-        print("[Messages]", file=fd)
-        print("ConfirmUninstall=Are you sure you want to remove %1? Note that user-specific configuration files of %1 are not removed.", file=fd)
-        print("BeveledLabel=DON'T PANIC", file=fd)
-        print(file=fd)
-        # List of source files
-        files = self.windows_exe_files + \
-                self.console_exe_files + \
-                self.service_exe_files + \
-                self.comserver_files + \
-                self.lib_files
-        print('[Files]', file=fd)
-        for path in files:
-            print(r'Source: "%s"; DestDir: "{app}\%s"; Flags: ignoreversion' % (path, os.path.dirname(path)), file=fd)
-        print(file=fd)
-        # Set icon filename
-        print('[Icons]', file=fd)
-        for path in self.windows_exe_files:
-            print(r'Name: "{group}\%s"; Filename: "{app}\%s"' % \
-                  (self.name, path), file=fd)
-        print(r'Name: "{group}\Uninstall %s"; Filename: "{uninstallexe}"' % self.name, file=fd)
-        print(file=fd)
-        # Uninstall registry keys
-        print('[Registry]', file=fd)
-        print(r'Root: HKCU; Subkey: "Software\Bastian\LinkChecker"; Flags: uninsdeletekey', file=fd)
-        print(file=fd)
-        # Uninstall optional log files
-        print('[UninstallDelete]', file=fd)
-        print(r'Type: files; Name: "{pf}\%s\linkchecker*.exe.log"' % self.name, file=fd)
-        print(file=fd)
-
-    def compile (self):
-        """Compile Inno script with iscc.exe."""
-        progpath = get_nt_platform_vars()[0]
-        cmd = r'%s\Inno Setup 5\iscc.exe' % progpath
-        subprocess.check_call([cmd, self.pathname])
-
-    def sign (self):
-        """Sign InnoSetup installer with local self-signed certificate."""
-        print("*** signing the inno setup installer ***")
-        pfxfile = r'C:\linkchecker.pfx'
-        if os.path.isfile(pfxfile):
-            path = get_windows_sdk_path()
-            signtool = os.path.join(path, "bin", "signtool.exe")
-            if os.path.isfile(signtool):
-                cmd = [signtool, 'sign', '/f', pfxfile, self.distfile]
-                subprocess.check_call(cmd)
-            else:
-                print("No signed installer: signtool.exe not found.")
-        else:
-            print("No signed installer: certificate %s not found." % pfxfile)
-
-def get_windows_sdk_path():
-    """Return path of Microsoft Windows SDK installation, or None if
-    not found."""
-    try:
-        import _winreg as winreg
-    except ImportError:
-        import winreg
-    sub_key = r"Software\Microsoft\Microsoft SDKs\Windows"
-    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, sub_key) as key:
-        name = "CurrentInstallFolder"
-        return winreg.QueryValueEx(key, name)[0]
-    return None
-
-try:
-    from py2exe.build_exe import py2exe as py2exe_build
-
-    class MyPy2exe (py2exe_build):
-        """First builds the exe file(s), then creates a Windows installer.
-        Needs InnoSetup to be installed."""
-
-        def run (self):
-            """Generate py2exe installer."""
-            # First, let py2exe do it's work.
-            py2exe_build.run(self)
-            print("*** preparing the inno setup script ***")
-            lib_dir = self.lib_dir
-            dist_dir = self.dist_dir
-            # create the Installer, using the files py2exe has created.
-            script = InnoScript(lib_dir, dist_dir, self.windows_exe_files,
-                self.console_exe_files, self.service_exe_files,
-                self.comserver_files, self.lib_files)
-            print("*** creating the inno setup script ***")
-            script.create()
-            print("*** compiling the inno setup script ***")
-            script.compile()
-            script.sign()
-except ImportError:
-    class MyPy2exe:
-        """Dummy py2exe class."""
-        pass
-
-
-try:
-    from py2app.build_app import py2app as py2app_build
-
-    class MyPy2app (py2app_build):
-        """First builds the app file(s), then creates a DMG installer.
-        Needs hdiutil to be installed."""
-
-        def run (self):
-            """Generate py2app installer."""
-            # First, let py2app do it's work.
-            py2app_build.run(self)
-            # Fix install names for Qt plugin libraries.
-            fix_qt_plugins_py2app(self.dist_dir)
-            sign_the_code(self.dist_dir)
-            generate_dmg_image(self.dist_dir)
-
-except ImportError:
-    class MyPy2app:
-        """Dummy py2app class."""
-        pass
-
-
-class MyRegister (register, object):
-    """Custom register command."""
-
-    def build_post_data(self, action):
-        """Force application name to lower case."""
-        data = super(MyRegister, self).build_post_data(action)
-        data['name'] = data['name'].lower()
-        return data
-
 
 args = dict(
     name = AppName,
     version = AppVersion,
-    description = "check links in web documents or full websites",
+    description = Description,
     keywords = "link,url,site,checking,crawling,verification,validation",
     author = myname,
     author_email = myemail,
     maintainer = myname,
     maintainer_email = myemail,
-    url = "http://wummel.github.com/linkchecker/",
+    url = "http://wummel.github.io/linkchecker/",
     license = "GPL",
-    long_description = """Linkchecker features:
-
-o recursive and multithreaded checking and site crawling
-o output in colored or normal text, HTML, SQL, CSV, XML or a sitemap graph in different formats
-o HTTP/1.1, HTTPS, FTP, mailto:, news:, nntp:, Telnet and local file links support
-o restrict link checking with regular expression filters for URLs
-o proxy support
-o username/password authorization for HTTP, FTP and Telnet
-o honors robots.txt exclusion protocol
-o Cookie support
-o HTML5 support
-o HTML and CSS syntax check
-o Antivirus check
-o a command line, GUI and web interface
-
-""",
+    long_description = get_long_description(),
     distclass = MyDistribution,
     cmdclass = {
         'install_lib': MyInstallLib,
@@ -894,12 +451,6 @@ o a command line, GUI and web interface
         'build': MyBuild,
         'clean': MyClean,
         'sdist': MySdist,
-        'py2exe': MyPy2exe,
-        'py2app': MyPy2app,
-        'register': MyRegister,
-    },
-    package_dir = {
-        'linkcheck_dns.dns': 'third_party/dnspython/dns',
     },
     packages = [
         'linkcheck',
@@ -908,15 +459,12 @@ o a command line, GUI and web interface
         'linkcheck.checker',
         'linkcheck.configuration',
         'linkcheck.director',
-        'linkcheck.gui',
         'linkcheck.htmlutil',
         'linkcheck.HtmlParser',
         'linkcheck.logger',
         'linkcheck.network',
-        'linkcheck_dns.dns',
-        'linkcheck_dns.dns.rdtypes',
-        'linkcheck_dns.dns.rdtypes.ANY',
-        'linkcheck_dns.dns.rdtypes.IN',
+        'linkcheck.parser',
+        'linkcheck.plugins',
     ],
     ext_modules = [
         Extension('linkcheck.HtmlParser.htmlsax',
@@ -950,26 +498,20 @@ o a command line, GUI and web interface
         'Programming Language :: C',
     ],
     options = {
-        "py2exe": py2exe_options,
-        "py2app": py2app_options,
-        "build_exe": cxfreeze_options,
     },
     # Requirements, usable with setuptools or the new Python packaging module.
+    install_requires = [
+        'requests<2.15,>=2.2',
+        'dnspython',
+        'pyxdg',
+    ],
     # Commented out since they are untested and not officially supported.
     # See also doc/install.txt for more detailed dependency documentation.
     #extra_requires = {
-    #    "HTML syntax check": ['tidy'], # http://utidylib.berlios.de/
-    #    "CSS syntax check": ['cssutils'], # http://cthedot.de/cssutils/
     #    "IP country info": ['GeoIP'], # http://www.maxmind.com/app/python
-    #    "Login form": ['twill'], # http://twill.idyll.org/
     #    "GNOME proxies": ['pygtk'], # http://www.pygtk.org/downloads.html
-    #    "Bash completion": ['optcomplete'], # http://furius.ca/optcomplete/
+    #    "Bash completion": ['argcomplete'], # https://pypi.python.org/pypi/argcomplete
     #    "Memory debugging": ['meliae'], # https://launchpad.net/meliae
     #}
 )
-if sys.platform == 'darwin':
-    args["app"] = ['linkchecker-gui']
-if executables:
-    args["executables"] = executables
-    args["cmdclass"]["install_exe"] = MyInstallExe
 setup(**args)

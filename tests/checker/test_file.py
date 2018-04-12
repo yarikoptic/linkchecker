@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2004-2012 Bastian Kleineidam
+# Copyright (C) 2004-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,6 +20,10 @@ Test file parsing.
 import os
 import sys
 import zipfile
+
+import pytest
+
+from tests import need_word, need_pdflib
 from . import LinkCheckTest, get_file
 
 
@@ -62,9 +66,24 @@ class TestFile (LinkCheckTest):
     def test_php (self):
         self.file_test("file.php")
 
+    @need_word
+    def test_word (self):
+        confargs = dict(enabledplugins=["WordParser"])
+        self.file_test("file.doc", confargs=confargs)
+
+    @need_pdflib
+    def test_pdf(self):
+        confargs = dict(enabledplugins=["PdfParser"])
+        self.file_test("file.pdf", confargs=confargs)
+
+    def test_markdown(self):
+        confargs = dict(enabledplugins=["MarkdownCheck"])
+        self.file_test("file.markdown", confargs=confargs)
+
     def test_urllist (self):
         self.file_test("urllist.txt")
 
+    @pytest.mark.xfail
     def test_directory_listing (self):
         # unpack non-unicode filename which cannot be stored
         # in the SF subversion repository
@@ -129,34 +148,26 @@ class TestFile (LinkCheckTest):
         self.direct(url, resultlines)
 
     def test_good_dir_space (self):
-        url = u"file://%(curdir)s/%(datadir)s/a b/bl.html" % self.get_attrs()
+        url = u"file://%(curdir)s/%(datadir)s/a b/" % self.get_attrs()
         nurl = self.norm(url)
         url2 = u"file://%(curdir)s/%(datadir)s/a b/el.html" % self.get_attrs()
         nurl2 = self.norm(url2)
+        url3 = u"file://%(curdir)s/%(datadir)s/a b/t.txt" % self.get_attrs()
+        nurl3 = self.norm(url3)
         resultlines = [
             u"url %s" % url,
             u"cache key %s" % nurl,
             u"real url %s" % nurl,
-            u"info 2 URLs parsed.",
-            u"valid",
-            u"url bl.html#bl",
-            u"cache key %s#bl" % nurl,
-            u"real url %s" % nurl,
-            u"name Broken link",
-            u"info 2 URLs parsed.",
-            u"warning Anchor `bl' not found. Available anchors: `BL'.",
             u"valid",
             u"url el.html",
             u"cache key %s" % nurl2,
             u"real url %s" % nurl2,
-            u"name External link",
-            u"info 1 URL parsed.",
+            u"name el.html",
             u"valid",
-            u"url #bl",
-            u"cache key %s#bl" % nurl2,
-            u"real url %s" % nurl2,
-            u"name Broken link",
-            u"warning Anchor `bl' not found. Available anchors: `BL'.",
+            u"url t.txt",
+            u"cache key %s" % nurl3,
+            u"real url %s" % nurl3,
+            u"name t.txt",
             u"valid",
         ]
         self.direct(url, resultlines, recursionlevel=2)

@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2011-2012 Bastian Kleineidam
+# Copyright (C) 2011-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -83,7 +83,10 @@ def get_plist_data_from_string (data):
         return biplist.readPlistFromString(data)
     # fall back to normal plistlist
     try:
-        return plistlib.readPlistFromString(data)
+        if hasattr(plistlib, 'readPlistFromBytes'):  # Python 3
+            return plistlib.readPlistFromBytes(data)
+        else:
+            return plistlib.readPlistFromString(data)
     except Exception:
         # not parseable (eg. not well-formed, or binary)
         return {}

@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2012 Bastian Kleineidam
+# Copyright (C) 2012-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,6 +23,6 @@ from . import unknownurl
 class IgnoreUrl (unknownurl.UnknownUrl):
     """Always ignored URL."""
 
-    def ignored (self):
+    def is_ignored (self):
         """Return True if this URL scheme is ignored."""
         return True

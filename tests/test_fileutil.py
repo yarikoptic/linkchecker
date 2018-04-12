@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2010-2012 Bastian Kleineidam
+# Copyright (C) 2010-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,8 +19,6 @@ Test file utility functions.
 """
 
 import unittest
-import os
-from . import get_file
 import linkcheck.fileutil
 
 file_existing = __file__
@@ -37,14 +35,3 @@ class TestFileutil (unittest.TestCase):
     def test_mtime (self):
         self.assertTrue(linkcheck.fileutil.get_mtime(file_existing) > 0)
         self.assertEqual(linkcheck.fileutil.get_mtime(file_non_existing), 0)
-
-    def mime_test (self, filename, mime_expected):
-        mime = linkcheck.fileutil.guess_mimetype(get_file(filename))
-        self.assertEqual(mime, mime_expected)
-
-    def test_mime (self):
-        filename = os.path.join("plist_binary", "Bookmarks.plist")
-        self.mime_test(filename, "application/x-plist+safari")
-        filename = os.path.join("plist_xml", "Bookmarks.plist")
-        self.mime_test(filename, "application/x-plist+safari")
-        self.mime_test("test.wml", "text/vnd.wap.wml")

@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@ A SQL logger.
 """
 
 import os
-from . import Logger
+from . import _Logger
 from .. import url as urlutil
 
 
@@ -46,15 +46,22 @@ def intify (s):
     return 0
 
 
-class SQLLogger (Logger):
+class SQLLogger (_Logger):
     """
     SQL output, should work with any SQL database (not tested).
     """
 
-    def __init__ (self, **args):
-        """
-        Initialize database access data.
-        """
+    LoggerName = 'sql'
+
+    LoggerArgs = {
+        "filename": "linkchecker-out.sql",
+        'separator': ';',
+        'dbname': 'linksdb',
+    }
+
+    def __init__ (self, **kwargs):
+        """Initialize database access data."""
+        args = self.get_args(kwargs)
         super(SQLLogger, self).__init__(**args)
         self.init_fileoutput(args)
         self.dbname = args['dbname']
@@ -83,7 +90,7 @@ class SQLLogger (Logger):
         """
         self.writeln(u"insert into %(table)s(urlname,"
               "parentname,baseref,valid,result,warning,info,url,line,col,"
-              "name,checktime,dltime,dlsize,cached,level) values ("
+              "name,checktime,dltime,size,cached,level,modified) values ("
               "%(base_url)s,"
               "%(url_parent)s,"
               "%(base_ref)s,"
@@ -97,7 +104,7 @@ class SQLLogger (Logger):
               "%(name)s,"
               "%(checktime)d,"
               "%(dltime)d,"
-              "%(dlsize)d,"
+              "%(size)d,"
               "%(cached)d,"
               "%(level)d,"
               "%(modified)s"
@@ -116,7 +123,7 @@ class SQLLogger (Logger):
                'name': sqlify(url_data.name),
                'checktime': url_data.checktime,
                'dltime': url_data.dltime,
-               'dlsize': url_data.dlsize,
+               'size': url_data.size,
                'cached': 0,
                'separator': self.separator,
                "level": url_data.level,
@@ -124,7 +131,7 @@ class SQLLogger (Logger):
               })
         self.flush()
 
-    def end_output (self):
+    def end_output (self, **kwargs):
         """
         Write end of checking info as sql comment.
         """

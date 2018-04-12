@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2004-2012 Bastian Kleineidam
+# Copyright (C) 2004-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -28,13 +28,6 @@ class TestMailBad (MailTest):
         self.mail_error(u"mailto:@")
         self.mail_error(u"mailto:@example.org")
         self.mail_error(u"mailto:a@")
-        url_too_long = "URL length %d is longer than 255."
-        url = u"mailto:%s@%s" % (u"a"*60, u"b"*200)
-        warning = url_too_long % len(url)
-        self.mail_error(url, warning=warning)
-        url = u"mailto:a@%s" % (u"a"*256)
-        warning = url_too_long % len(url)
-        self.mail_error(url, warning=warning)
         self.mail_error(u"mailto:%s@example.org" % (u"a"*65))
         self.mail_error(u'mailto:a@%s.com' % (u"a"*64))
         # local part quoted

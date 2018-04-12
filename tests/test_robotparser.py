@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2004-2012 Bastian Kleineidam
+# Copyright (C) 2004-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -31,9 +31,6 @@ class TestRobotParser (unittest.TestCase):
     def setUp (self):
         """Initialize self.rp as a robots.txt parser."""
         self.rp = robotparser2.RobotFileParser()
-        config = configuration.Configuration()
-        # uncomment for debugging
-        config.init_logging(None, debug=["all"])
 
     def check (self, a, b):
         """Helper function comparing two results a and b."""

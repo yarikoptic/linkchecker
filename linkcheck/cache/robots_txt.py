@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2006-2012 Bastian Kleineidam
+# Copyright (C) 2006-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 """
 Cache robots.txt contents.
 """
-from .. import robotparser2, configuration, url as urlutil
+from .. import robotparser2
 from ..containers import LFUCache
 from ..decorators import synchronized
 from ..lock import get_lock
@@ -33,41 +33,47 @@ class RobotsTxt (object):
     Thread-safe cache of downloaded robots.txt files.
     format: {cache key (string) -> robots.txt content (RobotFileParser)}
     """
-    useragent = str(configuration.UserAgent)
 
-    def __init__ (self):
+    def __init__ (self, useragent):
         """Initialize per-URL robots.txt cache."""
         # mapping {URL -> parsed robots.txt}
         self.cache = LFUCache(size=100)
         self.hits = self.misses = 0
         self.roboturl_locks = {}
+        self.useragent = useragent
 
-    def allows_url (self, roboturl, url, proxy, user, password, callback=None):
+    def allows_url (self, url_data):
         """Ask robots.txt allowance."""
+        roboturl = url_data.get_robots_txt_url()
         with self.get_lock(roboturl):
-            return self._allows_url(roboturl, url, proxy, user, password, callback)
+            return self._allows_url(url_data, roboturl)
 
-    def _allows_url (self, roboturl, url, proxy, user, password, callback):
+    def _allows_url (self, url_data, roboturl):
         """Ask robots.txt allowance. Assumes only single thread per robots.txt
         URL calls this function."""
         with cache_lock:
             if roboturl in self.cache:
                 self.hits += 1
                 rp = self.cache[roboturl]
-                return rp.can_fetch(self.useragent, url)
+                return rp.can_fetch(self.useragent, url_data.url)
             self.misses += 1
-        rp = robotparser2.RobotFileParser(proxy=proxy, user=user,
-            password=password)
+        kwargs = dict(auth=url_data.auth, session=url_data.session)
+        if hasattr(url_data, "proxy") and hasattr(url_data, "proxy_type"):
+            kwargs["proxies"] = {url_data.proxytype: url_data.proxy}
+        rp = robotparser2.RobotFileParser(**kwargs)
         rp.set_url(roboturl)
         rp.read()
-        if hasattr(callback, '__call__'):
-            parts = urlutil.url_split(rp.url)
-            host = "%s:%d" % (parts[1], parts[2])
-            wait = rp.get_crawldelay(self.useragent)
-            callback(host, wait)
         with cache_lock:
             self.cache[roboturl] = rp
-        return rp.can_fetch(self.useragent, url)
+        self.add_sitemap_urls(rp, url_data, roboturl)
+        return rp.can_fetch(self.useragent, url_data.url)
+
+    def add_sitemap_urls(self, rp, url_data, roboturl):
+        """Add sitemap URLs to queue."""
+        if not rp.sitemap_urls or not url_data.allows_simple_recursion():
+            return
+        for sitemap_url, line in rp.sitemap_urls:
+            url_data.add_url(sitemap_url, line=line)
 
     @synchronized(robot_lock)
     def get_lock(self, roboturl):

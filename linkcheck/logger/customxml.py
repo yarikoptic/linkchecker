@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,10 +21,16 @@ from . import xmllog
 from .. import strformat
 
 
-class CustomXMLLogger (xmllog.XMLLogger):
+class CustomXMLLogger (xmllog._XMLLogger):
     """
     XML custom output for easy post-processing.
     """
+
+    LoggerName = "xml"
+
+    LoggerArgs = {
+        "filename": "linkchecker-out.xml",
+    }
 
     def start_output (self):
         """
@@ -60,8 +66,8 @@ class CustomXMLLogger (xmllog.XMLLogger):
             self.xml_tag(u"extern", u"%d" % (1 if url_data.extern else 0))
         if url_data.dltime >= 0 and self.has_part("dltime"):
             self.xml_tag(u"dltime", u"%f" % url_data.dltime)
-        if url_data.dlsize >= 0 and self.has_part("dlsize"):
-            self.xml_tag(u"dlsize", u"%d" % url_data.dlsize)
+        if url_data.size >= 0 and self.has_part("dlsize"):
+            self.xml_tag(u"dlsize", u"%d" % url_data.size)
         if url_data.checktime and self.has_part("checktime"):
             self.xml_tag(u"checktime", u"%f" % url_data.checktime)
         if self.has_part("level"):
@@ -89,7 +95,7 @@ class CustomXMLLogger (xmllog.XMLLogger):
         self.xml_endtag(u'urldata')
         self.flush()
 
-    def end_output (self):
+    def end_output (self, **kwargs):
         """
         Write XML end tag.
         """

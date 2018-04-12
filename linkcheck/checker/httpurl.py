@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,26 +18,28 @@
 Handle http links.
 """
 
-import urlparse
-import os
-import errno
-import zlib
-import socket
-import rfc822
-import time
-from cStringIO import StringIO
-from datetime import datetime
+import requests
+# The validity of SSL certs is ignored to be able
+# the check the URL and recurse into it.
+# The warning about invalid SSL certs is given to the
+# user instead.
+import warnings
+warnings.simplefilter('ignore', requests.packages.urllib3.exceptions.InsecureRequestWarning)
 
-from .. import (log, LOG_CHECK, gzip2 as gzip, strformat, url as urlutil,
-    httplib2 as httplib, LinkCheckerError, httputil, configuration)
-from . import (internpaturl, proxysupport, httpheaders as headers, urlbase,
-    get_url_from, pooledconnection)
+try:
+    from cStringIO import StringIO
+except ImportError:
+    # Python 3
+    from io import StringIO
+
+from .. import (log, LOG_CHECK, strformat, mimeutil,
+    url as urlutil, LinkCheckerError, httputil)
+from . import (internpaturl, proxysupport)
+from ..HtmlParser import htmlsax
+from ..htmlutil import linkparse
 # import warnings
-from .const import WARN_HTTP_ROBOTS_DENIED, \
-    WARN_HTTP_WRONG_REDIRECT, WARN_HTTP_MOVED_PERMANENT, \
-    WARN_HTTP_EMPTY_CONTENT, WARN_HTTP_COOKIE_STORE_ERROR, \
-    WARN_HTTP_DECOMPRESS_ERROR, WARN_HTTP_UNSUPPORTED_ENCODING, \
-    WARN_HTTP_AUTH_UNKNOWN, WARN_HTTP_AUTH_UNAUTHORIZED
+from .const import WARN_HTTP_EMPTY_CONTENT
+from requests.sessions import REDIRECT_STATI
 
 # assumed HTTP header encoding
 HEADER_ENCODING = "iso-8859-1"
@@ -46,16 +48,7 @@ HTTP_SCHEMAS = ('http://', 'https://')
 # helper alias
 unicode_safe = strformat.unicode_safe
 
-supportHttps = hasattr(httplib, "HTTPSConnection")
-
-SUPPORTED_ENCODINGS = ('x-gzip', 'gzip', 'deflate')
-# Accept-Encoding header value
-ACCEPT_ENCODING = ",".join(SUPPORTED_ENCODINGS)
-# Accept-Charset header value
-ACCEPT_CHARSET = "utf-8,ISO-8859-1;q=0.7,*;q=0.3"
-
-
-class HttpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledconnection.PooledConnection):
+class HttpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport):
     """
     Url link with http scheme.
     """
@@ -65,40 +58,49 @@ class HttpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledc
         Initialize HTTP specific variables.
         """
         super(HttpUrl, self).reset()
-        self.max_redirects = 5
-        self.has301status = False
-        # flag if connection is persistent
-        self.persistent = False
-        # URLs seen through 301/302 redirections
-        self.aliases = []
         # initialize check data
-        self.headers = None
+        # server headers
+        self.headers = {}
         self.auth = None
-        self.cookies = []
-        # temporary data filled when reading redirections
-        self._data = None
-        # flag telling if GET method is allowed; determined by robots.txt
-        self.method_get_allowed = True
-        # HttpResponse object
-        self.response = None
+        self.ssl_cipher = None
+        self.ssl_cert = None
 
     def allows_robots (self, url):
         """
         Fetch and parse the robots.txt of given url. Checks if LinkChecker
-        can get the requested resource content. HEAD requests however are
-        still allowed.
+        can get the requested resource content.
 
         @param url: the url to be requested
         @type url: string
         @return: True if access is granted, otherwise False
         @rtype: bool
         """
-        roboturl = self.get_robots_txt_url()
-        user, password = self.get_user_password()
-        rb = self.aggregate.robots_txt
-        callback = self.aggregate.connections.host_wait
-        return rb.allows_url(roboturl, url, self.proxy, user, password,
-            callback=callback)
+        return not self.aggregate.config['robotstxt'] or self.aggregate.robots_txt.allows_url(self)
+
+    def content_allows_robots (self):
+        """
+        Return False if the content of this URL forbids robots to
+        search for recursive links.
+        """
+        if not self.is_html():
+            return True
+        # construct parser object
+        handler = linkparse.MetaRobotsFinder()
+        parser = htmlsax.parser(handler)
+        handler.parser = parser
+        if self.charset:
+            parser.encoding = self.charset
+        # parse
+        try:
+            parser.feed(self.get_content())
+            parser.flush()
+        except linkparse.StopParse as msg:
+            log.debug(LOG_CHECK, "Stopped parsing: %s", msg)
+            pass
+        # break cyclic dependencies
+        handler.parser = None
+        parser.handler = None
+        return handler.follow
 
     def add_size_info (self):
         """Get size of URL content from HTTP header."""
@@ -108,8 +110,6 @@ class HttpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledc
             # the content data is always decoded.
             try:
                 self.size = int(self.getheader("Content-Length"))
-                if self.dlsize == -1:
-                    self.dlsize = self.size
             except (ValueError, OverflowError):
                 pass
         else:
@@ -132,159 +132,94 @@ class HttpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledc
           - 5xx: Server Error - The server failed to fulfill an apparently
             valid request
         """
+        self.session = self.aggregate.get_request_session()
         # set the proxy, so a 407 status after this is an error
         self.set_proxy(self.aggregate.config["proxy"].get(self.scheme))
         self.construct_auth()
         # check robots.txt
         if not self.allows_robots(self.url):
-            # remove all previously stored results
-            self.add_warning(
-                 _("Access denied by robots.txt, skipping content checks."),
-                 tag=WARN_HTTP_ROBOTS_DENIED)
-            self.method_get_allowed = False
-        # first try with HEAD
-        self.method = "HEAD"
+            self.add_info(_("Access denied by robots.txt, checked only syntax."))
+            self.set_result(_("syntax OK"))
+            self.do_check_content = False
+            return
         # check the http connection
-        self.check_http_connection()
-        # redirections might have changed the URL
-        self.url = urlutil.urlunsplit(self.urlparts)
-        # check response
-        if self.response is not None:
-            self.check_response()
-            self.close_response()
+        request = self.build_request()
+        self.send_request(request)
+        self._add_response_info()
+        self.follow_redirections(request)
+        self.check_response()
+        if self.allows_simple_recursion():
+            self.parse_header_links()
 
-    def check_http_connection (self):
-        """
-        Check HTTP connection and return get response and a flag
-        if the check algorithm had to fall back to the GET method.
+    def build_request(self):
+        """Build a prepared request object."""
+        clientheaders = {}
+        if (self.parent_url and
+            self.parent_url.lower().startswith(HTTP_SCHEMAS)):
+            clientheaders["Referer"] = self.parent_url
+        kwargs = dict(
+            method='GET',
+            url=self.url,
+            headers=clientheaders,
+        )
+        if self.auth:
+            kwargs['auth'] = self.auth
+        log.debug(LOG_CHECK, "Prepare request with %s", kwargs)
+        request = requests.Request(**kwargs)
+        return self.session.prepare_request(request)
 
-        @return: response or None if url is already handled
-        @rtype: HttpResponse or None
-        """
-        while True:
-            # XXX refactor this
-            self.close_response()
-            try:
-                self._try_http_response()
-            except httplib.BadStatusLine as msg:
-                # some servers send empty HEAD replies
-                if self.method == "HEAD" and self.method_get_allowed:
-                    log.debug(LOG_CHECK, "Bad status line %r: falling back to GET", msg)
-                    self.fallback_to_get()
-                    continue
-                raise
-            except socket.error as msg:
-                # some servers reset the connection on HEAD requests
-                if self.method == "HEAD" and self.method_get_allowed and \
-                   msg[0] == errno.ECONNRESET:
-                    self.fallback_to_get()
-                    continue
-                raise
+    def send_request(self, request):
+        """Send request and store response in self.url_connection."""
+        # throttle the number of requests to each host
+        self.aggregate.wait_for_host(self.urlparts[1])
+        kwargs = self.get_request_kwargs()
+        kwargs["allow_redirects"] = False
+        self._send_request(request, **kwargs)
 
-            uheaders = unicode_safe(self.headers, encoding=HEADER_ENCODING)
-            log.debug(LOG_CHECK, "Headers: %s", uheaders)
-            # proxy enforcement (overrides standard proxy)
-            if self.response.status == 305 and self.headers:
-                oldproxy = (self.proxy, self.proxyauth)
-                newproxy = self.getheader("Location")
-                if newproxy:
-                    self.add_info(_("Enforced proxy `%(name)s'.") %
-                                  {"name": newproxy})
-                self.set_proxy(newproxy)
-                self.close_response()
-                if self.proxy is None:
-                    self.set_result(
-                         _("Missing 'Location' header with enforced proxy status 305, aborting."),
-                         valid=False)
-                    return
-                elif not self.proxy:
-                    self.set_result(
-                         _("Empty 'Location' header value with enforced proxy status 305, aborting."),
-                         valid=False)
-                    return
-                self._try_http_response()
-                # restore old proxy settings
-                self.proxy, self.proxyauth = oldproxy
-            try:
-                tries = self.follow_redirections()
-            except httplib.BadStatusLine as msg:
-                # some servers send empty HEAD replies
-                if self.method == "HEAD" and self.method_get_allowed:
-                    log.debug(LOG_CHECK, "Bad status line %r: falling back to GET", msg)
-                    self.fallback_to_get()
-                    continue
-                raise
-            if tries == -1:
-                log.debug(LOG_CHECK, "already handled")
-                self.close_response()
-                self.do_check_content = False
-                return
-            if tries >= self.max_redirects:
-                if self.method == "HEAD" and self.method_get_allowed:
-                    # Microsoft servers tend to recurse HEAD requests
-                    self.fallback_to_get()
-                    continue
-                self.set_result(_("more than %d redirections, aborting") %
-                                self.max_redirects, valid=False)
-                self.close_response()
-                self.do_check_content = False
-                return
-            if self.do_fallback(self.response.status):
-                self.fallback_to_get()
-                continue
-            # user authentication
-            if self.response.status == 401:
-                authenticate = self.getheader('WWW-Authenticate')
-                if authenticate is None:
-                    # Either the server intentionally blocked this request,
-                    # or there is a form on this page which requires
-                    # manual user/password input.
-                    # Either way, this is a warning.
-                    self.add_warning(_("Unauthorized access without HTTP authentication."),
-                       tag=WARN_HTTP_AUTH_UNAUTHORIZED)
-                    return
-                if not authenticate.startswith("Basic"):
-                    # LinkChecker only supports Basic authorization
-                    args = {"auth": authenticate}
-                    self.add_warning(
-                       _("Unsupported HTTP authentication `%(auth)s', " \
-                         "only `Basic' authentication is supported.") % args,
-                       tag=WARN_HTTP_AUTH_UNKNOWN)
-                    return
-                if not self.auth:
-                    self.construct_auth()
-                    if self.auth:
-                        continue
-            break
+    def _send_request(self, request, **kwargs):
+        """Send GET request."""
+        log.debug(LOG_CHECK, "Send request %s with %s", request, kwargs)
+        log.debug(LOG_CHECK, "Request headers %s", request.headers)
+        self.url_connection = self.session.send(request, **kwargs)
+        self.headers = self.url_connection.headers
+        self._add_ssl_info()
 
-    def do_fallback(self, status):
-        """Check for fallback according to response status.
-        @param status: The HTTP response status
-        @ptype status: int
-        @return: True if checker should use GET, else False
-        @rtype: bool
-        """
-        if self.method == "HEAD":
-            # Some sites do not support HEAD requests, for example
-            # youtube sends a 404 with HEAD, 200 with GET. Doh.
-            # A 405 "Method not allowed" status should also use GET.
-            if status >= 400:
-                log.debug(LOG_CHECK, "Method HEAD error %d, falling back to GET", status)
-                return True
-            # Other sites send 200 with HEAD, but 404 with GET. Bummer.
-            poweredby = self.getheader('X-Powered-By', u'')
-            server = self.getheader('Server', u'')
-            if (poweredby.startswith('Zope') or server.startswith('Zope')
-             or ('ASP.NET' in poweredby and 'Microsoft-IIS' in server)):
-                # Zope or IIS server could not get Content-Type with HEAD
-                # http://intermapper.com.dev4.silvertech.net/bogus.aspx
-                return True
-        return False
+    def _add_response_info(self):
+        """Set info from established HTTP(S) connection."""
+        self.charset = httputil.get_charset(self.headers)
+        self.set_content_type()
+        self.add_size_info()
 
-    def fallback_to_get(self):
-        """Set method to GET and clear aliases."""
-        self.method = "GET"
-        self.aliases = []
+    def _get_ssl_sock(self):
+        """Get raw SSL socket."""
+        assert self.scheme == u"https", self
+        raw_connection = self.url_connection.raw._connection
+        if not raw_connection:
+            # this happens with newer requests versions:
+            # https://github.com/linkcheck/linkchecker/issues/76
+            return None
+        if raw_connection.sock is None:
+            # sometimes the socket is not yet connected
+            # see https://github.com/kennethreitz/requests/issues/1966
+            raw_connection.connect()
+        return raw_connection.sock
+
+    def _add_ssl_info(self):
+        """Add SSL cipher info."""
+        if self.scheme == u'https':
+            sock = self._get_ssl_sock()
+            if not sock:
+                log.debug(LOG_CHECK, "cannot extract SSL certificate from connection")
+                self.ssl_cert = None
+            elif hasattr(sock, 'cipher'):
+                self.ssl_cert = sock.getpeercert()
+            else:
+                # using pyopenssl
+                cert = sock.connection.get_peer_certificate()
+                self.ssl_cert = httputil.x509_to_dict(cert)
+            log.debug(LOG_CHECK, "Got SSL certificate %s", self.ssl_cert)
+        else:
+            self.ssl_cert = None
 
     def construct_auth (self):
         """Construct HTTP Basic authentication credentials if there
@@ -294,166 +229,62 @@ class HttpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledc
             return
         _user, _password = self.get_user_password()
         if _user is not None and _password is not None:
-            credentials = httputil.encode_base64("%s:%s" % (_user, _password))
-            self.auth = "Basic " + credentials
-            log.debug(LOG_CHECK, "Using basic authentication")
+            self.auth = (_user, _password)
 
-    def get_content_type (self):
+    def set_content_type (self):
         """Return content MIME type or empty string."""
-        if self.content_type is None:
-            if self.headers:
-                self.content_type = headers.get_content_type(self.headers)
-            else:
-                self.content_type = u""
-        return self.content_type
+        self.content_type = httputil.get_content_type(self.headers)
 
-    def follow_redirections (self, set_result=True):
+    def is_redirect(self):
+        """Check if current response is a redirect."""
+        return ('location' in self.headers and
+                self.url_connection.status_code in REDIRECT_STATI)
+
+    def get_request_kwargs(self):
+        """Construct keyword parameters for Session.request() and
+        Session.resolve_redirects()."""
+        kwargs = dict(stream=True, timeout=self.aggregate.config["timeout"])
+        if self.proxy:
+            kwargs["proxies"] = {self.proxytype: self.proxy}
+        if self.scheme == u"https" and self.aggregate.config["sslverify"]:
+            kwargs['verify'] = self.aggregate.config["sslverify"]
+        else:
+            kwargs['verify'] = False
+        return kwargs
+
+    def get_redirects(self, request):
+        """Return iterator of redirects for given request."""
+        kwargs = self.get_request_kwargs()
+        return self.session.resolve_redirects(self.url_connection,
+            request, **kwargs)
+
+    def follow_redirections(self, request):
         """Follow all redirections of http response."""
         log.debug(LOG_CHECK, "follow all redirections")
-        redirected = self.url
-        tries = 0
-        while self.response.status in [301, 302] and self.headers and \
-              tries < self.max_redirects:
-            num = self.follow_redirection(set_result, redirected)
-            if num == -1:
-                return num
-            redirected = urlutil.urlunsplit(self.urlparts)
-            tries += num
-        return tries
-
-    def follow_redirection (self, set_result, redirected):
-        """Follow one redirection of http response."""
-        newurl = self.getheader("Location",
-                     self.getheader("Uri", u""))
-        # make new url absolute and unicode
-        newurl = urlparse.urljoin(redirected, unicode_safe(newurl))
-        log.debug(LOG_CHECK, "Redirected to %r", newurl)
-        self.add_info(_("Redirected to `%(url)s'.") % {'url': newurl})
-        # norm base url - can raise UnicodeError from url.idna_encode()
-        redirected, is_idn = urlbase.url_norm(newurl)
-        log.debug(LOG_CHECK, "Norm redirected to %r", redirected)
-        urlparts = strformat.url_unicode_split(redirected)
-        if not self.check_redirection_scheme(redirected, urlparts, set_result):
-            return -1
-        if not self.check_redirection_newscheme(redirected, urlparts, set_result):
-            return -1
-        if not self.check_redirection_domain(redirected, urlparts,
-                                             set_result):
-            return -1
-        if not self.check_redirection_robots(redirected, set_result):
-            return -1
-        num = self.check_redirection_recursion(redirected, set_result)
-        if num != 0:
-            return num
-        if set_result:
-            self.check301status()
-        self.close_response()
-        self.close_connection()
-        # remember redirected url as alias
-        self.aliases.append(redirected)
-        if self.anchor:
-            urlparts[4] = self.anchor
-        # note: urlparts has to be a list
-        self.urlparts = urlparts
-        self.build_url_parts()
-        # store cookies from redirect response
-        self.store_cookies()
-        # new response data
-        self._try_http_response()
-        return 1
-
-    def check_redirection_scheme (self, redirected, urlparts, set_result):
-        """Return True if redirection scheme is ok, else False."""
-        if urlparts[0] in ('ftp', 'http', 'https'):
-            return True
-        # For security reasons do not allow redirects to protocols
-        # other than HTTP, HTTPS or FTP.
-        if set_result:
-            self.add_warning(
-              _("Redirection to url `%(newurl)s' is not allowed.") %
-              {'newurl': redirected})
-            self.set_result(_("syntax OK"))
-        return False
-
-    def check_redirection_domain (self, redirected, urlparts, set_result):
-        """Return True if redirection domain is ok, else False."""
-        # XXX does not support user:pass@netloc format
-        if urlparts[1] != self.urlparts[1]:
-            # URL domain changed
-            if self.recursion_level == 0 and urlparts[0] in ('http', 'https'):
-                # Add intern patterns for redirection of URLs given by the
-                # user for HTTP schemes.
-                self.add_intern_pattern(url=redirected)
-                return True
-        # check extern filter again
-        self.extern = None
-        self.set_extern(redirected)
-        if self.extern[0] and self.extern[1]:
-            if set_result:
-                self.check301status()
-                self.add_info(_("The redirected URL is outside of the domain "
-                              "filter, checked only syntax."))
-                self.set_result(_("filtered"))
-            return False
-        return True
-
-    def check_redirection_robots (self, redirected, set_result):
-        """Check robots.txt allowance for redirections. Return True if
-        allowed, else False."""
-        if self.allows_robots(redirected):
-            return True
-        if set_result:
-            self.add_warning(
-               _("Access to redirected URL denied by robots.txt, "
-                 "checked only syntax."), tag=WARN_HTTP_ROBOTS_DENIED)
-            self.set_result(_("syntax OK"))
-        return False
-
-    def check_redirection_recursion (self, redirected, set_result):
-        """Check for recursive redirect. Return zero if no recursion
-        detected, max_redirects for recursion with HEAD request,
-        -1 otherwise."""
-        all_seen = [self.cache_url_key] + self.aliases
-        if redirected not in all_seen:
-            return 0
-        if self.method == "HEAD" and self.method_get_allowed:
-            # Microsoft servers tend to recurse HEAD requests
-            # fall back to the original url and use GET
-            return self.max_redirects
-        if set_result:
-            urls = "\n  => ".join(all_seen + [redirected])
-            self.set_result(_("recursive redirection encountered:\n %(urls)s") %
-                            {"urls": urls}, valid=False)
-        return -1
-
-    def check_redirection_newscheme (self, redirected, urlparts, set_result):
-        """Check for HTTP(S)/FTP redirection. Return True for
-        redirection with same scheme, else False."""
-        if urlparts[0] != self.urlparts[0]:
-            # changed scheme
-            newobj = get_url_from(
-                  redirected, self.recursion_level, self.aggregate,
-                  parent_url=self.parent_url, base_ref=self.base_ref,
-                  line=self.line, column=self.column, name=self.name)
-            msg = _("Redirection to URL `%(newurl)s' with different scheme"
-                   " found; the original URL was `%(url)s'.") % \
-                 {"url": self.url, "newurl": newobj.url}
-            if set_result:
-                self.add_warning(msg, tag=WARN_HTTP_WRONG_REDIRECT)
-                self.set_result(_("syntax OK"))
-                # append new object to queue
-                self.aggregate.urlqueue.put(newobj)
-                return False
-            raise LinkCheckerError(msg)
-        return True
-
-    def check301status (self):
-        """If response page has been permanently moved add a warning."""
-        if self.response.status == 301 and not self.has301status:
-            self.add_warning(_("HTTP 301 (moved permanent) encountered: you"
-                               " should update this link."),
-                             tag=WARN_HTTP_MOVED_PERMANENT)
-            self.has301status = True
+        if self.is_redirect():
+            # run connection plugins for old connection
+            self.aggregate.plugin_manager.run_connection_plugins(self)
+        response = None
+        for response in self.get_redirects(request):
+            newurl = response.url
+            log.debug(LOG_CHECK, "Redirected to %r", newurl)
+            self.aliases.append(newurl)
+            # XXX on redirect errors this is not printed
+            self.add_info(_("Redirected to `%(url)s'.") % {'url': newurl})
+            # Reset extern and recalculate
+            self.extern = None
+            self.set_extern(newurl)
+            self.urlparts = strformat.url_unicode_split(newurl)
+            self.build_url_parts()
+            self.url_connection = response
+            self.headers = response.headers
+            self.url = urlutil.urlunsplit(self.urlparts)
+            self.scheme = self.urlparts[0].lower()
+            self._add_ssl_info()
+            self._add_response_info()
+            if self.is_redirect():
+                # run connection plugins for old connection
+                self.aggregate.plugin_manager.run_connection_plugins(self)
 
     def getheader (self, name, default=None):
         """Get decoded header value.
@@ -468,302 +299,48 @@ class HttpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledc
 
     def check_response (self):
         """Check final result and log it."""
-        if self.response.status >= 400:
-            self.set_result(u"%r %s" % (self.response.status, self.response.reason),
+        if self.url_connection.status_code >= 400:
+            self.set_result(u"%d %s" % (self.url_connection.status_code, self.url_connection.reason),
                             valid=False)
         else:
-            if self.response.status == 204:
+            if self.url_connection.status_code == 204:
                 # no content
-                self.add_warning(self.response.reason,
+                self.add_warning(self.url_connection.reason,
                                  tag=WARN_HTTP_EMPTY_CONTENT)
-            # store cookies for valid links
-            self.store_cookies()
-            if self.response.status >= 200:
-                self.set_result(u"%r %s" % (self.response.status, self.response.reason))
+            if self.url_connection.status_code >= 200:
+                self.set_result(u"%r %s" % (self.url_connection.status_code, self.url_connection.reason))
             else:
                 self.set_result(_("OK"))
-        modified = rfc822.parsedate(self.getheader('Last-Modified', u''))
-        if modified:
-            self.modified = datetime.utcfromtimestamp(time.mktime(modified))
 
-    def _try_http_response (self):
-        """Try to get a HTTP response object. For persistent
-        connections that the server closed unexpected, a new connection
-        will be opened.
-        """
-        try:
-            self._get_http_response()
-        except socket.error as msg:
-            if msg.args[0] == 32 and self.persistent:
-                # server closed persistent connection - retry
-                log.debug(LOG_CHECK, "Server closed connection: retry")
-                self.persistent = False
-                self._get_http_response()
-            else:
-                raise
-        except httplib.BadStatusLine as msg:
-            if self.persistent:
-                # server closed connection - retry
-                log.debug(LOG_CHECK, "Empty status line: retry")
-                self.persistent = False
-                self._get_http_response()
-            else:
-                raise
+    def read_content(self):
+        """Return data and data size for this URL.
+        Can be overridden in subclasses."""
+        maxbytes = self.aggregate.config["maxfilesizedownload"]
+        buf = StringIO()
+        for data in self.url_connection.iter_content(chunk_size=self.ReadChunkBytes):
+            if buf.tell() + len(data) > maxbytes:
+                raise LinkCheckerError(_("File size too large"))
+            buf.write(data)
+        return buf.getvalue()
 
-    def _get_http_response (self):
-        """Send HTTP request and get response object."""
-        scheme, host, port = self.get_netloc()
-        log.debug(LOG_CHECK, "Connecting to %r", host)
-        self.get_http_object(scheme, host, port)
-        self.add_connection_request()
-        self.add_connection_headers()
-        self.response = self.url_connection.getresponse(buffering=True)
-        self.headers = self.response.msg
-        self.content_type = None
-        self.persistent = not self.response.will_close
-        if self.persistent and self.method == "HEAD":
-            # Some servers send page content after a HEAD request,
-            # but only after making the *next* request. This breaks
-            # protocol synchronisation. Workaround here is to close
-            # the connection after HEAD.
-            # Example: http://www.empleo.gob.mx (Apache/1.3.33 (Unix) mod_jk)
-            self.persistent = False
-        # Note that for POST method the connection should also be closed,
-        # but this method is never used.
-        # If possible, use official W3C HTTP response name
-        if self.response.status in httplib.responses:
-            self.response.reason = httplib.responses[self.response.status]
-        if self.response.reason:
-            self.response.reason = unicode_safe(self.response.reason)
-        log.debug(LOG_CHECK, "Response: %s %s", self.response.status, self.response.reason)
-
-    def add_connection_request(self):
-        """Add connection request."""
-        # the anchor fragment is not part of a HTTP URL, see
-        # http://tools.ietf.org/html/rfc2616#section-3.2.2
-        anchor = ''
-        if self.proxy:
-            path = urlutil.urlunsplit((self.urlparts[0], self.urlparts[1],
-                                 self.urlparts[2], self.urlparts[3], anchor))
-        else:
-            path = urlutil.urlunsplit(('', '', self.urlparts[2],
-                                        self.urlparts[3], anchor))
-        self.url_connection.putrequest(self.method, path, skip_host=True,
-                                       skip_accept_encoding=True)
-
-    def add_connection_headers(self):
-        """Add connection header."""
-        # be sure to use the original host as header even for proxies
-        self.url_connection.putheader("Host", self.urlparts[1])
-        if self.auth:
-            # HTTP authorization
-            self.url_connection.putheader("Authorization", self.auth)
-        if self.proxyauth:
-            self.url_connection.putheader("Proxy-Authorization",
-                                         self.proxyauth)
-        if (self.parent_url and
-            self.parent_url.lower().startswith(HTTP_SCHEMAS)):
-            self.url_connection.putheader("Referer", self.parent_url)
-        self.url_connection.putheader("User-Agent",
-            self.aggregate.config["useragent"])
-        # prefer compressed content
-        self.url_connection.putheader("Accept-Encoding", ACCEPT_ENCODING)
-        # prefer UTF-8 encoding
-        self.url_connection.putheader("Accept-Charset", ACCEPT_CHARSET)
-        # send do-not-track header
-        self.url_connection.putheader("DNT", "1")
-        if self.aggregate.config['sendcookies']:
-            self.send_cookies()
-        self.url_connection.endheaders()
-
-    def store_cookies (self):
-        """Save cookies from response headers."""
-        if self.aggregate.config['storecookies']:
-            for c in self.cookies:
-                self.add_info(_("Sent Cookie: %(cookie)s.") %
-                              {"cookie": c.client_header_value()})
-            errors = self.aggregate.cookies.add(self.headers,
-                self.urlparts[0], self.urlparts[1], self.urlparts[2])
-            if errors:
-                self.add_warning(
-                  _("Could not store cookies from headers: %(error)s.") %
-                   {'error': "\n".join(errors)},
-                   tag=WARN_HTTP_COOKIE_STORE_ERROR)
-
-    def send_cookies (self):
-        """Add cookie headers to request."""
-        scheme = self.urlparts[0]
-        host = self.urlparts[1]
-        port = urlutil.default_ports.get(scheme, 80)
-        host, port = urlutil.splitport(host, port)
-        path = self.urlparts[2] or u"/"
-        self.cookies = self.aggregate.cookies.get(scheme, host, port, path)
-        if not self.cookies:
-            return
-        # add one cookie header with all cookie data
-        # this is limited by maximum header length
-        headername = "Cookie"
-        headervalue = ""
-        max_value_len = headers.MAX_HEADER_BYTES - len(headername) - 2
-        for c in self.cookies:
-            cookievalue = c.client_header_value()
-            if "version" in c.attributes:
-                # add separate header for explicit versioned cookie
-                if headervalue:
-                    self.url_connection.putheader(headername, headervalue)
-                self.url_connection.putheader(headername, cookievalue)
-                headervalue = ""
-                continue
-            if headervalue:
-                cookievalue = "; " + cookievalue
-            if (len(headervalue) + len(cookievalue)) < max_value_len:
-                headervalue += cookievalue
-            else:
-                log.debug(LOG_CHECK, "Discard too-long cookie %r", cookievalue)
-        if headervalue:
-            log.debug(LOG_CHECK, "Sending cookie header %s:%s", headername, headervalue)
-            self.url_connection.putheader(headername, headervalue)
-
-    def get_http_object (self, scheme, host, port):
-        """
-        Open a HTTP connection.
-
-        @param host: the host to connect to
-        @ptype host: string of the form <host>[:<port>]
-        @param scheme: 'http' or 'https'
-        @ptype scheme: string
-        @return: None
-        """
-        self.close_connection()
-        def create_connection(scheme, host, port):
-            """Create a new http or https connection."""
-            kwargs = dict(port=port, strict=True, timeout=self.aggregate.config["timeout"])
-            if scheme == "http":
-                h = httplib.HTTPConnection(host, **kwargs)
-            elif scheme == "https" and supportHttps:
-                devel_dir = os.path.join(configuration.configdata.install_data, "config")
-                kwargs["ca_certs"] = configuration.get_share_file(devel_dir, 'ca-certificates.crt')
-                h = httplib.HTTPSConnection(host, **kwargs)
-            else:
-                msg = _("Unsupported HTTP url scheme `%(scheme)s'") % {"scheme": scheme}
-                raise LinkCheckerError(msg)
-            if log.is_debug(LOG_CHECK):
-                h.set_debuglevel(1)
-            return h
-        self.get_pooled_connection(scheme, host, port, create_connection)
-        self.url_connection.connect()
-
-    def read_content (self):
-        """Get content of the URL target. The content data is cached after
-        the first call to this method.
-
-        @return: URL content, decompressed and decoded
-        @rtype: string
-        """
-        assert self.method_get_allowed, 'unallowed content read'
-        if self.method != "GET" or self.response is None:
-            self.method = "GET"
-            self._try_http_response()
-            num = self.follow_redirections(set_result=False)
-            if not (0 <= num <= self.max_redirects):
-                raise LinkCheckerError(_("Redirection error"))
-            # Re-read size info, since the GET request result could be different
-            # than a former HEAD request.
-            self.add_size_info()
-        if self.size > self.MaxFilesizeBytes:
-            raise LinkCheckerError(_("File size too large"))
-        self.charset = headers.get_charset(self.headers)
-        return self._read_content()
-
-    def _read_content (self):
-        """Read URL contents."""
-        data = self.response.read(self.MaxFilesizeBytes+1)
-        if len(data) > self.MaxFilesizeBytes:
-            raise LinkCheckerError(_("File size too large"))
-        dlsize = len(data)
-        urls = self.aggregate.add_download_data(self.cache_content_key, data)
-        self.warn_duplicate_content(urls)
-        encoding = headers.get_content_encoding(self.headers)
-        if encoding in SUPPORTED_ENCODINGS:
-            try:
-                if encoding == 'deflate':
-                    f = StringIO(zlib.decompress(data))
-                else:
-                    f = gzip.GzipFile('', 'rb', 9, StringIO(data))
-            except zlib.error as msg:
-                log.debug(LOG_CHECK, "Error %s data of len %d", encoding, len(data))
-                self.add_warning(_("Decompress error %(err)s") %
-                                 {"err": str(msg)},
-                                 tag=WARN_HTTP_DECOMPRESS_ERROR)
-                f = StringIO(data)
-            try:
-                data = f.read()
-            finally:
-                f.close()
-        return data, dlsize
-
-    def encoding_supported (self):
-        """Check if page encoding is supported."""
-        encoding = headers.get_content_encoding(self.headers)
-        if encoding and encoding not in SUPPORTED_ENCODINGS and \
-           encoding != 'identity':
-            self.add_warning(_("Unsupported content encoding `%(encoding)s'.") %
-                             {"encoding": encoding},
-                             tag=WARN_HTTP_UNSUPPORTED_ENCODING)
-            return False
-        return True
-
-    def can_get_content(self):
-        """Check if it's allowed to read content."""
-        return self.method_get_allowed
-
-    def content_allows_robots (self):
-        """Check if it's allowed to read content before execution."""
-        if not self.method_get_allowed:
-            return False
-        return super(HttpUrl, self).content_allows_robots()
-
-    def check_warningregex (self):
-        """Check if it's allowed to read content before execution."""
-        if self.method_get_allowed:
-            super(HttpUrl, self).check_warningregex()
-
-    def is_html (self):
-        """
-        See if this URL points to a HTML file by looking at the
-        Content-Type header, file extension and file content.
-
-        @return: True if URL points to HTML file
-        @rtype: bool
-        """
-        if not self.valid:
-            return False
-        mime = self.get_content_type()
-        if self.ContentMimetypes.get(mime) != "html":
-            return False
-        if self.headers:
-            return self.encoding_supported()
-        return True
-
-    def is_css (self):
-        """Return True iff content of this url is CSS stylesheet."""
-        if not self.valid:
-            return False
-        mime = self.get_content_type()
-        if self.ContentMimetypes.get(mime) != "css":
-            return False
-        if self.headers:
-            return self.encoding_supported()
-        return True
-
-    def is_http (self):
-        """
-        This is a HTTP file.
-
-        @return: True
-        @rtype: bool
-        """
-        return True
+    def parse_header_links(self):
+        """Parse URLs in HTTP headers Link:."""
+        for linktype, linkinfo in self.url_connection.links.items():
+            url = linkinfo["url"]
+            name = u"Link: header %s" % linktype
+            self.add_url(url, name=name)
+        if 'Refresh' in self.headers:
+            from ..htmlutil.linkparse import refresh_re
+            value = self.headers['Refresh'].strip()
+            mo = refresh_re.match(value)
+            if mo:
+                url = unicode_safe(mo.group("url"))
+                name = u"Refresh: header"
+                self.add_url(url, name=name)
+        if 'Content-Location' in self.headers:
+            url = self.headers['Content-Location'].strip()
+            name = u"Content-Location: header"
+            self.add_url(url, name=name)
 
     def is_parseable (self):
         """
@@ -772,30 +349,18 @@ class HttpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledc
         @return: True if content is parseable
         @rtype: bool
         """
-        if not (self.valid and self.headers):
+        if not self.valid:
             return False
-        ctype = self.get_content_type()
-        if ctype not in self.ContentMimetypes:
-            log.debug(LOG_CHECK, "URL with content type %r is not parseable", ctype)
+        # some content types must be validated with the page content
+        if self.content_type in ("application/xml", "text/xml"):
+            rtype = mimeutil.guess_mimetype_read(self.get_content)
+            if rtype is not None:
+                # XXX side effect
+                self.content_type = rtype
+        if self.content_type not in self.ContentMimetypes:
+            log.debug(LOG_CHECK, "URL with content type %r is not parseable", self.content_type)
             return False
-        return self.encoding_supported()
-
-    def parse_url (self):
-        """
-        Parse file contents for new links to check.
-        """
-        ctype = self.get_content_type()
-        if self.is_html():
-            self.parse_html()
-        elif self.is_css():
-            self.parse_css()
-        elif ctype == "application/x-shockwave-flash":
-            self.parse_swf()
-        elif ctype == "application/msword":
-            self.parse_word()
-        elif ctype == "text/vnd.wap.wml":
-            self.parse_wml()
-        self.add_num_url_info()
+        return True
 
     def get_robots_txt_url (self):
         """
@@ -805,28 +370,3 @@ class HttpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledc
         @rtype: string
         """
         return "%s://%s/robots.txt" % tuple(self.urlparts[0:2])
-
-    def close_response(self):
-        """Close the HTTP response object."""
-        if self.response is None:
-            return
-        self.response.close()
-        self.response = None
-
-    def close_connection (self):
-        """Release the connection from the connection pool. Persistent
-        connections will not be closed.
-        """
-        log.debug(LOG_CHECK, "Closing %s", self.url_connection)
-        if self.url_connection is None:
-            # no connection is open
-            return
-        # add to cached connections
-        scheme, host, port = self.get_netloc()
-        if self.persistent and self.url_connection.is_idle():
-            expiration = time.time() + headers.http_keepalive(self.headers)
-        else:
-            self.close_response()
-            expiration = None
-        self.aggregate.connections.release(scheme, host, port, self.url_connection, expiration=expiration)
-        self.url_connection = None

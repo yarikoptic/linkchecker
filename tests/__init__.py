@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2005-2012 Bastian Kleineidam
+# Copyright (C) 2005-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,6 +14,8 @@
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+from __future__ import print_function
+
 import signal
 import subprocess
 import os
@@ -22,6 +24,10 @@ import socket
 import pytest
 from contextlib import contextmanager
 from linkcheck import LinkCheckerInterrupt
+
+
+basedir = os.path.dirname(__file__)
+linkchecker_cmd = os.path.join(os.path.dirname(basedir), "linkchecker")
 
 
 class memoized (object):
@@ -49,16 +55,32 @@ class memoized (object):
         return self.func.__doc__
 
 
-def _run (cmd):
+def run (cmd, verbosity=0, **kwargs):
+    """Run command without error checking.
+    @return: command return code"""
+    if kwargs.get("shell"):
+        # for shell calls the command must be a string
+        cmd = " ".join(cmd)
+    return subprocess.call(cmd, **kwargs)
+
+
+def run_checked (cmd, ret_ok=(0,), **kwargs):
+    """Run command and raise OSError on error."""
+    retcode = run(cmd, **kwargs)
+    if retcode not in ret_ok:
+        msg = "Command `%s' returned non-zero exit status %d" % (cmd, retcode)
+        raise OSError(msg)
+    return retcode
+
+
+
+def run_silent (cmd):
     """Run given command without output."""
     null = open(os.name == 'nt' and ':NUL' or "/dev/null", 'w')
     try:
-        try:
-            return subprocess.call(cmd, stdout=null, stderr=subprocess.STDOUT)
-        finally:
-            null.close()
-    except OSError:
-        return -1
+        return run(cmd, stdout=null, stderr=subprocess.STDOUT)
+    finally:
+        null.close()
 
 
 def _need_func (testfunc, name):
@@ -91,7 +113,7 @@ need_network = _need_func(has_network, "network")
 @memoized
 def has_msgfmt ():
     """Test if msgfmt is available."""
-    return _run(["msgfmt", "-V"]) == 0
+    return run_silent(["msgfmt", "-V"]) == 0
 
 need_msgfmt = _need_func(has_msgfmt, "msgfmt")
 
@@ -199,18 +221,6 @@ def need_newsserver (server):
     return check_func
 
 
-@memoized
-def has_pyqt ():
-    """Test if PyQT is installed."""
-    try:
-        import PyQt4
-        return True
-    except ImportError:
-        pass
-    return False
-
-need_pyqt = _need_func(has_pyqt, "PyQT")
-
 
 @memoized
 def has_x11 ():
@@ -218,6 +228,23 @@ def has_x11 ():
     return os.getenv('DISPLAY') is not None
 
 need_x11 = _need_func(has_x11, 'X11')
+
+
+@memoized
+def has_word():
+    """Test if Word is available."""
+    from linkcheck.plugins import parseword
+    return parseword.has_word()
+
+need_word = _need_func(has_word, 'Word')
+
+
+@memoized
+def has_pdflib():
+    from linkcheck.plugins import parsepdf
+    return parsepdf.has_pdflib
+
+need_pdflib = _need_func(has_pdflib, 'pdflib')
 
 
 @contextmanager
@@ -243,7 +270,7 @@ def limit_time (seconds, skip=False):
             try:
                 with _limit_time(seconds):
                     return func(*args, **kwargs)
-            except LinkCheckerInterrupt, msg:
+            except LinkCheckerInterrupt as msg:
                 if skip:
                     pytest.skip("time limit of %d seconds exceeded" % seconds)
                 assert False, msg
@@ -263,10 +290,9 @@ def get_file (filename=None):
 
 
 if __name__ == '__main__':
-    print "has clamav", has_clamav()
-    print "has network", has_network()
-    print "has msgfmt", has_msgfmt()
-    print "has POSIX", has_posix()
-    print "has proxy", has_proxy()
-    print "has PyQt", has_pyqt()
-    print "has X11", has_x11()
+    print("has clamav", has_clamav())
+    print("has network", has_network())
+    print("has msgfmt", has_msgfmt())
+    print("has POSIX", has_posix())
+    print("has proxy", has_proxy())
+    print("has X11", has_x11())

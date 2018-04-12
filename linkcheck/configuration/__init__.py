@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2013 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,19 +18,21 @@
 Store metadata and options.
 """
 
-import sys
 import os
 import re
-import logging.config
-import urllib
-import urlparse
+try:  # Python 3
+    from urllib import parse
+    from urllib import request
+except ImportError:  # Python 2
+    import urlparse as parse
+    import urllib as request
 import shutil
 import socket
 import _LinkChecker_configdata as configdata
-from .. import (log, LOG_CHECK, LOG_ROOT, ansicolor, lognames, clamav,
-    get_config_dir, fileutil, configdict)
+from .. import (log, LOG_CHECK, get_install_data, fileutil)
 from . import confparse
 from ..decorators import memoized
+from xdg.BaseDirectory import xdg_config_home, xdg_data_home
 
 Version = configdata.version
 ReleaseDate = configdata.release_date
@@ -38,13 +40,13 @@ AppName = configdata.name
 App = AppName+u" "+Version
 Author = configdata.author
 HtmlAuthor = Author.replace(u' ', u'&nbsp;')
-Copyright = u"Copyright (C) 2000-2013 "+Author
-HtmlCopyright = u"Copyright &copy; 2000-2013 "+HtmlAuthor
+Copyright = u"Copyright (C) 2000-2014 "+Author
+HtmlCopyright = u"Copyright &copy; 2000-2014 "+HtmlAuthor
 AppInfo = App+u"              "+Copyright
 HtmlAppInfo = App+u", "+HtmlCopyright
 Url = configdata.url
 SupportUrl = u"https://github.com/wummel/linkchecker/issues"
-DonateUrl = u"http://wummel.github.com/linkchecker/donations.html"
+DonateUrl = u"http://wummel.github.io/linkchecker/donations.html"
 Email = configdata.author_email
 UserAgent = u"Mozilla/5.0 (compatible; %s/%s; +%s)" % (AppName, Version, Url)
 Freeware = AppName+u""" comes with ABSOLUTELY NO WARRANTY!
@@ -60,61 +62,91 @@ def normpath (path):
     return os.path.normcase(os.path.normpath(expanded))
 
 
-# List optional Python modules in the form (module, name)
+# List Python modules in the form (module, name, version attribute)
 Modules = (
-    ("PyQt4.Qsci", u"QScintilla"),
-    ("optcomplete", u"Optcomplete"),
-    ("tidy", u"HTMLtidy"),
-    ("cssutils", u"CSSutils"),
-    ("GeoIP", u"GeoIP"),   # on Unix systems
-    ("pygeoip", u"GeoIP"), # on Windows systems
-    ("twill", u"Twill"),
-    ("sqlite3", u"Sqlite"),
-    ("gconf", u"Gconf"),
-    ("meliae", u"Meliae"),
+# required modules
+    ("requests", "Requests", "__version__"),
+# optional modules
+    ("argcomplete", u"Argcomplete", None),
+    ("GeoIP", u"GeoIP", 'lib_version'),   # on Unix systems
+    ("pygeoip", u"GeoIP", 'lib_version'), # on Windows systems
+    ("sqlite3", u"Pysqlite", 'version'),
+    ("sqlite3", u"Sqlite", 'sqlite_version'),
+    ("gconf", u"Gconf", '__version__'),
+    ("meliae", u"Meliae", '__version__'),
 )
 
-def get_modules_info ():
-    """Return list of unicode strings with detected module info."""
-    lines = []
-    # PyQt
-    try:
-        from PyQt4 import QtCore
-        lines.append(u"Qt: %s / PyQt: %s" %
-                     (QtCore.QT_VERSION_STR, QtCore.PYQT_VERSION_STR))
-    except (ImportError, AttributeError):
-        pass
-    # modules
-    modules = [name for (mod, name) in Modules if fileutil.has_module(mod)]
-    if modules:
-        lines.append(u"Modules: %s" % (u", ".join(modules)))
-    return lines
+def get_modules_info():
+    """Return unicode string with detected module info."""
+    module_infos = []
+    for (mod, name, version_attr) in Modules:
+        if not fileutil.has_module(mod):
+            continue
+        if version_attr and hasattr(mod, version_attr):
+            attr = getattr(mod, version_attr)
+            version = attr() if callable(attr) else attr
+            module_infos.append("%s %s" % (name, version))
+        else:
+            # ignore attribute errors in case library developers
+            # change the version information attribute
+            module_infos.append(name)
+    return u"Modules: %s" % (u", ".join(module_infos))
 
 
-def get_share_file (devel_dir, filename):
+def get_share_dir ():
+    """Return absolute path of LinkChecker example configuration."""
+    return os.path.join(get_install_data(), "share", "linkchecker")
+
+
+def get_share_file (filename, devel_dir=None):
     """Return a filename in the share directory.
     @param devel_dir: directory to search when developing
     @ptype devel_dir: string
     @param filename: filename to search for
     @ptype filename: string
     @return: the found filename or None
-    @rtype: string or None
+    @rtype: string
+    @raises: ValueError if not found
     """
-    paths = [
+    paths = [get_share_dir()]
+    if devel_dir is not None:
         # when developing
-        devel_dir,
-        # when running under py2exe
-        os.path.join(os.path.dirname(os.path.abspath(sys.executable)),
-                     "share", "linkchecker"),
-        # after installing as a package
-        configdata.config_dir,
-    ]
+        paths.insert(0, devel_dir)
     for path in paths:
         fullpath = os.path.join(path, filename)
         if os.path.isfile(fullpath):
             return fullpath
     # not found
-    return None
+    msg = "%s not found in %s; check your installation" % (filename, paths)
+    raise ValueError(msg)
+
+
+def get_system_cert_file():
+    """Try to find a system-wide SSL certificate file.
+    @return: the filename to the cert file
+    @raises: ValueError when no system cert file could be found
+    """
+    if os.name == 'posix':
+        filename = "/etc/ssl/certs/ca-certificates.crt"
+        if os.path.isfile(filename):
+            return filename
+    msg = "no system certificate file found"
+    raise ValueError(msg)
+
+
+def get_certifi_file():
+    """Get the SSL certifications installed by the certifi package.
+    @return: the filename to the cert file
+    @rtype: string
+    @raises: ImportError when certifi is not installed or ValueError when
+             the file is not found
+    """
+    import certifi
+    filename = certifi.where()
+    if os.path.isfile(filename):
+        return filename
+    msg = "%s not found; check your certifi installation" % filename
+    raise ValueError(msg)
 
 
 # dynamic options
@@ -129,177 +161,71 @@ class Configuration (dict):
         Initialize the default options.
         """
         super(Configuration, self).__init__()
-        self['trace'] = False
-        self["verbose"] = False
-        self["complete"] = False
-        self["warnings"] = True
-        self["ignorewarnings"] = []
-        self['quiet'] = False
-        self["anchors"] = False
-        self["externlinks"] = []
-        self["internlinks"] = []
-        # on ftp, password is set by Pythons ftplib
+        ## checking options
+        self["allowedschemes"] = []
+        self['cookiefile'] = None
+        self['robotstxt'] = True
+        self["debugmemory"] = False
+        self["localwebroot"] = None
+        self["maxfilesizeparse"] = 1*1024*1024
+        self["maxfilesizedownload"] = 5*1024*1024
+        self["maxnumurls"] = None
+        self["maxrunseconds"] = None
+        self["maxrequestspersecond"] = 10
+        self["maxhttpredirects"] = 10
+        self["nntpserver"] = os.environ.get("NNTP_SERVER", None)
+        self["proxy"] = request.getproxies()
+        self["sslverify"] = True
+        self["threads"] = 10
+        self["timeout"] = 60
+        self["aborttimeout"] = 300
+        self["recursionlevel"] = -1
+        self["useragent"] = UserAgent
+        ## authentication
         self["authentication"] = []
         self["loginurl"] = None
         self["loginuserfield"] = "login"
         self["loginpasswordfield"] = "password"
         self["loginextrafields"] = {}
-        self["proxy"] = urllib.getproxies()
-        self["recursionlevel"] = -1
-        self["wait"] = 0
-        self['sendcookies'] = False
-        self['storecookies'] = False
-        self['cookiefile'] = None
+        ## filtering
+        self["externlinks"] = []
+        self["ignorewarnings"] = []
+        self["internlinks"] = []
+        self["checkextern"] = False
+        ## plugins
+        self["pluginfolders"] = get_plugin_folders()
+        self["enabledplugins"] = []
+        ## output
+        self['trace'] = False
+        self['quiet'] = False
+        self["verbose"] = False
+        self["warnings"] = True
+        self["fileoutput"] = []
+        self['output'] = 'text'
         self["status"] = False
         self["status_wait_seconds"] = 5
-        self["fileoutput"] = []
-        # Logger configurations
-        self["text"] = {
-            "filename": "linkchecker-out.txt",
-            'colorparent':  "default",
-            'colorurl':     "default",
-            'colorname':    "default",
-            'colorreal':    "cyan",
-            'colorbase':    "purple",
-            'colorvalid':   "bold;green",
-            'colorinvalid': "bold;red",
-            'colorinfo':    "default",
-            'colorwarning': "bold;yellow",
-            'colordltime':  "default",
-            'colordlsize':  "default",
-            'colorreset':   "default",
-        }
-        self['html'] = {
-            "filename":        "linkchecker-out.html",
-            'colorbackground': '#fff7e5',
-            'colorurl':        '#dcd5cf',
-            'colorborder':     '#000000',
-            'colorlink':       '#191c83',
-            'colorwarning':    '#e0954e',
-            'colorerror':      '#db4930',
-            'colorok':         '#3ba557',
-        }
-        self['gml'] = {
-            "filename": "linkchecker-out.gml",
-        }
-        self['sql'] = {
-            "filename": "linkchecker-out.sql",
-            'separator': ';',
-            'dbname': 'linksdb',
-        }
-        self['csv'] = {
-            "filename": "linkchecker-out.csv",
-            'separator': ';',
-            "quotechar": '"',
-        }
-        self['blacklist'] = {
-            "filename": "~/.linkchecker/blacklist",
-        }
-        self['xml'] = {
-            "filename": "linkchecker-out.xml",
-        }
-        self['gxml'] = {
-            "filename": "linkchecker-out.gxml",
-        }
-        self['dot'] = {
-            "filename": "linkchecker-out.dot",
-            "encoding": "ascii",
-        }
-        self['sitemap'] = {
-            "filename": "linkchecker-out.sitemap.xml",
-            "encoding": "utf-8",
-        }
-        self['none'] = {}
-        self['output'] = 'text'
         self['logger'] = None
-        self["warningregex"] = None
-        self["warningregex_max"] = 5
-        self["warnsizebytes"] = None
-        self["nntpserver"] = os.environ.get("NNTP_SERVER", None)
-        self["threads"] = 100
-        # socket timeout in seconds
-        self["timeout"] = 60
-        self["checkhtml"] = False
-        self["checkcss"] = False
-        self["scanvirus"] = False
-        self["clamavconf"] = clamav.canonical_clamav_conf()
-        self["useragent"] = UserAgent
-        self["debugmemory"] = False
-        self["localwebroot"] = None
-        self["warnsslcertdaysvalid"] = 14
-        self["maxrunseconds"] = None
-        self["maxnumurls"] = None
-        from ..logger import Loggers
-        self.loggers = dict(**Loggers)
+        self.loggers = {}
+        from ..logger import LoggerClasses
+        for c in LoggerClasses:
+            key = c.LoggerName
+            self[key] = {}
+            self.loggers[key] = c
 
-    def init_logging (self, status_logger, debug=None, handler=None):
-        """
-        Set up the application logging (not to be confused with check
-        loggers). When debug is not None it is expected to be a list of
-        logger names for which debugging will be enabled.
-
-        If no thread debugging is enabled, threading will be disabled.
-        """
-        logging.config.dictConfig(configdict)
-        if handler is None:
-            handler = ansicolor.ColoredStreamHandler(strm=sys.stderr)
-        self.add_loghandler(handler, debug)
-        self.set_debug(debug)
+    def set_status_logger(self, status_logger):
+        """Set the status logger."""
         self.status_logger = status_logger
 
-    def set_debug (self, debug):
-        """Set debugging levels for configured loggers. The argument
-        is a list of logger names to enable debug for."""
-        self.set_loglevel(debug, logging.DEBUG)
-
-    def add_loghandler (self, handler, debug):
-        """Add log handler to root logger LOG_ROOT and set formatting."""
-        logging.getLogger(LOG_ROOT).addHandler(handler)
-        format = "%(levelname)s "
-        if debug:
-            format += "%(asctime)s "
-        if self['threads'] > 0:
-            format += "%(threadName)s "
-        format += "%(message)s"
-        handler.setFormatter(logging.Formatter(format))
-
-    def remove_loghandler (self, handler):
-        """Remove log handler from root logger LOG_ROOT."""
-        logging.getLogger(LOG_ROOT).removeHandler(handler)
-
-    def reset_loglevel (self):
-        """Reset log level to display only warnings and errors."""
-        self.set_loglevel(['all'], logging.WARN)
-
-    def set_loglevel (self, loggers, level):
-        """Set logging levels for given loggers."""
-        if not loggers:
-            return
-        if 'all' in loggers:
-            loggers = lognames.keys()
-        # disable threading if no thread debugging
-        if "thread" not in loggers and level == logging.DEBUG:
-            self['threads'] = 0
-        for key in loggers:
-            logging.getLogger(lognames[key]).setLevel(level)
-
-    def logger_new (self, loggertype, **kwargs):
-        """
-        Instantiate new logger and return it.
-        """
-        args = {}
-        args.update(self[loggertype])
+    def logger_new (self, loggername, **kwargs):
+        """Instantiate new logger and return it."""
+        args = self[loggername]
         args.update(kwargs)
-        return self.loggers[loggertype](**args)
+        return self.loggers[loggername](**args)
 
-    def logger_add (self, loggertype, loggerclass, loggerargs=None):
-        """
-        Add a new logger type to the known loggers.
-        """
-        if loggerargs is None:
-            loggerargs = {}
-        self.loggers[loggertype] = loggerclass
-        self[loggertype] = loggerargs
+    def logger_add (self, loggerclass):
+        """Add a new logger type to the known loggers."""
+        self.loggers[loggerclass.LoggerName] = loggerclass
+        self[loggerclass.LoggerName] = {}
 
     def read (self, files=None):
         """
@@ -326,7 +252,6 @@ class Configuration (dict):
                 filtered_cfiles.append(cfile)
         log.debug(LOG_CHECK, "reading configuration from %s", filtered_cfiles)
         confparse.LCConfigParser(self).read(filtered_cfiles)
-        self.sanitize()
 
     def add_auth (self, user=None, password=None, pattern=None):
         """Add given authentication data."""
@@ -352,30 +277,21 @@ class Configuration (dict):
                 return (auth['user'], auth['password'])
         return (None, None)
 
+    def get_connectionlimits(self):
+        """Get dict with limit per connection type."""
+        return {key: self['maxconnections%s' % key] for key in ('http', 'https', 'ftp')}
+
     def sanitize (self):
         "Make sure the configuration is consistent."
-        if self["anchors"]:
-            self.sanitize_anchors()
         if self['logger'] is None:
             self.sanitize_logger()
-        if self['scanvirus']:
-            self.sanitize_scanvirus()
-        if self['storecookies'] or self['cookiefile']:
-            self.sanitize_cookies()
         if self['loginurl']:
             self.sanitize_loginurl()
         self.sanitize_proxies()
+        self.sanitize_plugins()
+        self.sanitize_ssl()
         # set default socket timeout
         socket.setdefaulttimeout(self['timeout'])
-
-    def sanitize_anchors (self):
-        """Make anchor configuration consistent."""
-        if not self["warnings"]:
-            self["warnings"] = True
-            from ..checker.const import Warnings
-            self["ignorewarnings"] = Warnings.keys()
-        if 'url-anchor-not-found' in self["ignorewarnings"]:
-            self["ignorewarnings"].remove('url-anchor-not-found')
 
     def sanitize_logger (self):
         """Make logger configuration consistent."""
@@ -383,24 +299,6 @@ class Configuration (dict):
             log.warn(LOG_CHECK, _("activating text logger output."))
             self['output'] = 'text'
         self['logger'] = self.logger_new(self['output'])
-
-    def sanitize_scanvirus (self):
-        """Ensure clamav is installed for virus checking."""
-        try:
-            clamav.init_clamav_conf(self['clamavconf'])
-        except clamav.ClamavError:
-            log.warn(LOG_CHECK,
-                _("Clamav could not be initialized"))
-            self['scanvirus'] = False
-
-    def sanitize_cookies (self):
-        """Make cookie configuration consistent."""
-        if not self['sendcookies']:
-            log.warn(LOG_CHECK, _("activating sendcookies."))
-            self['sendcookies'] = True
-        if not self['storecookies']:
-            log.warn(LOG_CHECK, _("activating storecookies."))
-            self['storecookies'] = True
 
     def sanitize_loginurl (self):
         """Make login configuration consistent."""
@@ -421,7 +319,7 @@ class Configuration (dict):
         if not url.lower().startswith(("http:", "https:")):
             log.warn(LOG_CHECK, _("login URL is not a HTTP URL."))
             disable = True
-        urlparts = urlparse.urlsplit(url)
+        urlparts = parse.urlsplit(url)
         if not urlparts[0] or not urlparts[1] or not urlparts[2]:
             log.warn(LOG_CHECK, _("login URL is incomplete."))
             disable = True
@@ -429,9 +327,6 @@ class Configuration (dict):
             log.warn(LOG_CHECK,
               _("disabling login URL %(url)s.") % {"url": url})
             self["loginurl"] = None
-        elif not self['storecookies']:
-            # login URL implies storing and sending cookies
-            self['storecookies'] = self['sendcookies'] = True
 
     def sanitize_proxies (self):
         """Try to read additional proxy settings which urllib does not
@@ -447,6 +342,69 @@ class Configuration (dict):
             if ftp_proxy:
                 self["proxy"]["ftp"] = ftp_proxy
 
+    def sanitize_plugins(self):
+        """Ensure each plugin is configurable."""
+        for plugin in self["enabledplugins"]:
+            if plugin not in self:
+                self[plugin] = {}
+
+    def sanitize_ssl(self):
+        """Use local installed certificate file if available.
+        Tries to get system, then certifi, then the own
+        installed certificate file."""
+        if self["sslverify"] is True:
+            try:
+                self["sslverify"] = get_system_cert_file()
+            except ValueError:
+                try:
+                    self["sslverify"] = get_certifi_file()
+                except (ValueError, ImportError):
+                    try:
+                        self["sslverify"] = get_share_file('cacert.pem')
+                    except ValueError:
+                        pass
+
+
+def get_user_data():
+    """Get the user data folder.
+    Returns "~/.linkchecker/" if this folder exists, \
+    "$XDG_DATA_HOME/linkchecker" if it does not.
+    @rtype string
+    """
+    homedotdir = normpath("~/.linkchecker/")
+    userdata = homedotdir if os.path.isdir(homedotdir) \
+        else os.path.join(xdg_data_home, "linkchecker")
+    return userdata
+
+def get_plugin_folders():
+    """Get linkchecker plugin folders. Default is
+    "$XDG_DATA_HOME/linkchecker/plugins/". "~/.linkchecker/plugins/" is also
+    supported for backwards compatibility, and is used if both directories
+    exist."""
+    folders = []
+    defaultfolder = os.path.join(get_user_data(), "plugins")
+    if not os.path.exists(defaultfolder) and not Portable:
+        try:
+            make_userdir(defaultfolder)
+        except Exception as errmsg:
+            msg = _("could not create plugin directory %(dirname)r: %(errmsg)r")
+            args = dict(dirname=defaultfolder, errmsg=errmsg)
+            log.warn(LOG_CHECK, msg % args)
+    if os.path.exists(defaultfolder):
+        folders.append(defaultfolder)
+    return folders
+
+
+def make_userdir(child):
+    """Create a child directory."""
+    userdir = os.path.dirname(child)
+    if not os.path.isdir(userdir):
+        if os.name == 'nt':
+            # Windows forbids filenames with leading dot unless
+            # a trailing dot is added.
+            userdir += "."
+        os.makedirs(userdir, 0700)
+
 
 def get_user_config():
     """Get the user configuration filename.
@@ -458,22 +416,18 @@ def get_user_config():
     @rtype string
     """
     # initial config (with all options explained)
-    initialconf = normpath(os.path.join(get_config_dir(), "linkcheckerrc"))
+    initialconf = normpath(os.path.join(get_share_dir(), "linkcheckerrc"))
     # per user config settings
-    userconf = normpath("~/.linkchecker/linkcheckerrc")
+    homedotfile = normpath("~/.linkchecker/linkcheckerrc")
+    userconf = homedotfile if os.path.isfile(homedotfile) \
+        else os.path.join(xdg_config_home, "linkchecker", "linkcheckerrc")
     if os.path.isfile(initialconf) and not os.path.exists(userconf) and \
        not Portable:
         # copy the initial configuration to the user configuration
         try:
-            userdir = os.path.dirname(userconf)
-            if not os.path.isdir(userdir):
-                if os.name == 'nt':
-                    # Windows forbids filenames with leading dot unless
-                    # a trailing dot is added.
-                    userdir += "."
-                os.mkdir(userdir, 0700)
+            make_userdir(userconf)
             shutil.copy(initialconf, userconf)
-        except StandardError as errmsg:
+        except Exception as errmsg:
             msg = _("could not copy initial configuration file %(src)r to %(dst)r: %(errmsg)r")
             args = dict(src=initialconf, dst=userconf, errmsg=errmsg)
             log.warn(LOG_CHECK, msg % args)
@@ -495,8 +449,9 @@ def get_gconf_http_proxy ():
                 if not port:
                     port = 8080
                 return "%s:%d" % (host, port)
-    except StandardError as msg:
+    except Exception as msg:
         log.debug(LOG_CHECK, "error getting HTTP proxy from gconf: %s", msg)
+        pass
     return None
 
 
@@ -514,8 +469,9 @@ def get_gconf_ftp_proxy ():
             if not port:
                 port = 8080
             return "%s:%d" % (host, port)
-    except StandardError as msg:
+    except Exception as msg:
         log.debug(LOG_CHECK, "error getting FTP proxy from gconf: %s", msg)
+        pass
     return None
 
 
@@ -528,8 +484,9 @@ def get_kde_http_proxy ():
     try:
         data = read_kioslaverc(config_dir)
         return data.get("http_proxy")
-    except StandardError as msg:
+    except Exception as msg:
         log.debug(LOG_CHECK, "error getting HTTP proxy from KDE: %s", msg)
+        pass
 
 
 def get_kde_ftp_proxy ():
@@ -541,8 +498,9 @@ def get_kde_ftp_proxy ():
     try:
         data = read_kioslaverc(config_dir)
         return data.get("ftp_proxy")
-    except StandardError as msg:
+    except Exception as msg:
         log.debug(LOG_CHECK, "error getting FTP proxy from KDE: %s", msg)
+        pass
 
 # The following KDE functions are largely ported and ajusted from
 # Google Chromium:

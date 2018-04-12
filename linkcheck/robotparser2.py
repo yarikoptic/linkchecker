@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,31 +20,39 @@ Robots.txt parser.
 The robots.txt Exclusion Protocol is implemented as specified in
 http://www.robotstxt.org/wc/norobots-rfc.html
 """
-import urlparse
-import urllib
-import urllib2
+try:  # Python 3
+    from urllib import parse
+except ImportError:  # Python 2
+    import urllib as parse
+try:  # Python 3
+    from urllib.parse import urlparse
+except ImportError:  # Python 2
+    from urlparse import urlparse
 import time
-import socket
-import sys
-from . import httplib2 as httplib
-from . import url as urlutil
+
+import requests
+
 from . import log, LOG_CHECK, configuration
 
 __all__ = ["RobotFileParser"]
 
 ACCEPT_ENCODING = 'x-gzip,gzip,deflate'
 
+
 class RobotFileParser (object):
     """This class provides a set of methods to read, parse and answer
     questions about a single robots.txt file."""
 
-    def __init__ (self, url='', proxy=None, user=None, password=None):
+    def __init__ (self, url='', session=None, proxies=None, auth=None):
         """Initialize internal entry lists and store given url and
         credentials."""
         self.set_url(url)
-        self.proxy = proxy
-        self.user = user
-        self.password = password
+        if session is None:
+            self.session = requests.Session()
+        else:
+            self.session = session
+        self.proxies = proxies
+        self.auth = auth
         self._reset()
 
     def _reset (self):
@@ -54,6 +62,8 @@ class RobotFileParser (object):
         self.disallow_all = False
         self.allow_all = False
         self.last_checked = 0
+        # list of tuples (sitemap url, line number)
+        self.sitemap_urls = []
 
     def mtime (self):
         """Returns the time the robots.txt file was last fetched.
@@ -74,76 +84,43 @@ class RobotFileParser (object):
     def set_url (self, url):
         """Set the URL referring to a robots.txt file."""
         self.url = url
-        self.host, self.path = urlparse.urlparse(url)[1:3]
+        self.host, self.path = urlparse(url)[1:3]
 
     def read (self):
         """Read the robots.txt URL and feeds it to the parser."""
         self._reset()
-        data = None
-        headers = {
-            'User-Agent': configuration.UserAgent,
-            'Accept-Encoding': ACCEPT_ENCODING,
-        }
-        req = urllib2.Request(self.url, data, headers)
+        kwargs = dict(
+            headers = {
+                'User-Agent': configuration.UserAgent,
+                'Accept-Encoding': ACCEPT_ENCODING,
+            }
+        )
+        if self.auth:
+            kwargs["auth"] = self.auth
+        if self.proxies:
+            kwargs["proxies"] = self.proxies
         try:
-            self._read_content(req)
-        except urllib2.HTTPError, x:
-            if x.code in (401, 403):
-                self.disallow_all = True
-                log.debug(LOG_CHECK, "%r disallow all (code %d)",
-                          self.url, x.code)
-            else:
-                self.allow_all = True
-                log.debug(LOG_CHECK, "%r allow all (HTTP error)", self.url)
-        except socket.timeout:
-            raise
-        except urllib2.URLError:
-            x = sys.exc_info()[1]
-            if isinstance(x.reason, socket.timeout):
-                raise
-            self.allow_all = True
-            log.debug(LOG_CHECK, "%r allow all (URL error)", self.url)
-        except (socket.gaierror, socket.error):
-            # no network
-            self.allow_all = True
-            log.debug(LOG_CHECK, "%r allow all (socket error)", self.url)
-        except IOError:
-            self.allow_all = True
-            log.debug(LOG_CHECK, "%r allow all (I/O error)", self.url)
-        except httplib.HTTPException:
-            self.allow_all = True
-            log.debug(LOG_CHECK, "%r allow all (HTTP exception)", self.url)
-        except ValueError:
-            # urllib2 could raise ValueError on invalid data
-            self.disallow_all = True
-            log.debug(LOG_CHECK, "%r disallow all (value error)", self.url)
-
-    def _read_content (self, req):
-        """Read robots.txt content.
-        @raise: urllib2.HTTPError on HTTP failure codes
-        @raise: socket.gaierror, socket.error, urllib2.URLError on network
-          errors
-        @raise: httplib.HTTPException, IOError on HTTP errors
-        @raise: ValueError on bad digest auth (a bug)
-        """
-        if log.is_debug(LOG_CHECK):
-            debuglevel = 1
-        else:
-            debuglevel = 0
-        f = urlutil.get_opener(user=self.user, password=self.password,
-            proxy=self.proxy, debuglevel=debuglevel)
-        res = None
-        try:
-            res = f.open(req)
-            ct = res.info().get("Content-Type")
-            if ct and ct.lower().startswith("text/plain"):
-                self.parse([line.strip() for line in res])
+            response = self.session.get(self.url, **kwargs)
+            response.raise_for_status()
+            content_type = response.headers.get('content-type')
+            if content_type and content_type.lower().startswith('text/plain'):
+                self.parse(response.iter_lines())
             else:
                 log.debug(LOG_CHECK, "%r allow all (no text content)", self.url)
                 self.allow_all = True
-        finally:
-            if res is not None:
-                res.close()
+        except requests.HTTPError as x:
+            if x.response.status_code in (401, 403):
+                self.disallow_all = True
+                log.debug(LOG_CHECK, "%r disallow all (code %d)", self.url, x.response.status_code)
+            else:
+                self.allow_all = True
+                log.debug(LOG_CHECK, "%r allow all (HTTP error)", self.url)
+        except requests.exceptions.Timeout:
+            raise
+        except requests.exceptions.RequestException:
+            # no network or other failure
+            self.allow_all = True
+            log.debug(LOG_CHECK, "%r allow all (request error)", self.url)
 
     def _add_entry (self, entry):
         """Add a parsed entry to entry list.
@@ -163,18 +140,17 @@ class RobotFileParser (object):
 
         @return: None
         """
-        log.debug(LOG_CHECK, "%r parse %d lines", self.url, len(lines))
+        log.debug(LOG_CHECK, "%r parse lines", self.url)
         state = 0
         linenumber = 0
         entry = Entry()
 
         for line in lines:
+            line = line.strip()
             linenumber += 1
             if not line:
                 if state == 1:
-                    log.debug(LOG_CHECK,
-                         "%r line %d: allow or disallow directives without" \
-                         " any user-agent line", self.url, linenumber)
+                    log.debug(LOG_CHECK, "%r line %d: allow or disallow directives without any user-agent line", self.url, linenumber)
                     entry = Entry()
                     state = 0
                 elif state == 2:
@@ -191,52 +167,50 @@ class RobotFileParser (object):
             line = line.split(':', 1)
             if len(line) == 2:
                 line[0] = line[0].strip().lower()
-                line[1] = urllib.unquote(line[1].strip())
+                line[1] = parse.unquote(line[1].strip())
                 if line[0] == "user-agent":
                     if state == 2:
-                        log.debug(LOG_CHECK,
-                          "%r line %d: missing blank line before user-agent" \
-                          " directive", self.url, linenumber)
+                        log.debug(LOG_CHECK, "%r line %d: missing blank line before user-agent directive", self.url, linenumber)
                         self._add_entry(entry)
                         entry = Entry()
                     entry.useragents.append(line[1])
                     state = 1
                 elif line[0] == "disallow":
                     if state == 0:
-                        log.debug(LOG_CHECK,
-                          "%r line %d: missing user-agent directive before" \
-                          " this line", self.url, linenumber)
+                        log.debug(LOG_CHECK, "%r line %d: missing user-agent directive before this line", self.url, linenumber)
+                        pass
                     else:
                         entry.rulelines.append(RuleLine(line[1], False))
                         state = 2
                 elif line[0] == "allow":
                     if state == 0:
-                        log.debug(LOG_CHECK,
-                          "%r line %d: missing user-agent directive before" \
-                          " this line", self.url, linenumber)
+                        log.debug(LOG_CHECK, "%r line %d: missing user-agent directive before this line", self.url, linenumber)
+                        pass
                     else:
                         entry.rulelines.append(RuleLine(line[1], True))
                         state = 2
                 elif line[0] == "crawl-delay":
                     if state == 0:
-                        log.debug(LOG_CHECK,
-                          "%r line %d: missing user-agent directive before" \
-                          " this line", self.url, linenumber)
+                        log.debug(LOG_CHECK, "%r line %d: missing user-agent directive before this line", self.url, linenumber)
+                        pass
                     else:
                         try:
                             entry.crawldelay = max(0, int(line[1]))
                             state = 2
-                        except ValueError:
-                            log.debug(LOG_CHECK,
-                              "%r line %d: invalid delay number %r",
-                              self.url, linenumber, line[1])
+                        except (ValueError, OverflowError):
+                            log.debug(LOG_CHECK, "%r line %d: invalid delay number %r", self.url, linenumber, line[1])
                             pass
+                elif line[0] == "sitemap":
+                    # Note that sitemap URLs must be absolute according to
+                    # http://www.sitemaps.org/protocol.html#submit_robots
+                    # But this should be checked by the calling layer.
+                    self.sitemap_urls.append((line[1], linenumber))
                 else:
-                    log.debug(LOG_CHECK, "%r line %d: unknown key %r",
-                             self.url, linenumber, line[0])
+                    log.debug(LOG_CHECK, "%r line %d: unknown key %r", self.url, linenumber, line[0])
+                    pass
             else:
-                log.debug(LOG_CHECK, "%r line %d: malformed line %r",
-                    self.url, linenumber, line)
+                log.debug(LOG_CHECK, "%r line %d: malformed line %r", self.url, linenumber, line)
+                pass
         if state in (1, 2):
             self.entries.append(entry)
         self.modified()
@@ -248,8 +222,7 @@ class RobotFileParser (object):
         @return: True if agent can fetch url, else False
         @rtype: bool
         """
-        log.debug(LOG_CHECK, "%r check allowance for:\n" \
-              "  user agent: %r\n  url: %r ...", self.url, useragent, url)
+        log.debug(LOG_CHECK, "%r check allowance for:\n  user agent: %r\n  url: %r ...", self.url, useragent, url)
         if not isinstance(useragent, str):
             useragent = useragent.encode("ascii", "ignore")
         if not isinstance(url, str):
@@ -262,7 +235,7 @@ class RobotFileParser (object):
             return True
         # search for given user agent matches
         # the first match counts
-        url = urllib.quote(urlparse.urlparse(urllib.unquote(url))[2]) or "/"
+        url = parse.quote(urlparse(parse.unquote(url))[2]) or "/"
         for entry in self.entries:
             if entry.applies_to(useragent):
                 return entry.allowance(url)
@@ -308,7 +281,7 @@ class RuleLine (object):
             # an empty value means allow all
             allowance = True
             path = '/'
-        self.path = urllib.quote(path)
+        self.path = parse.quote(path)
         self.allowance = allowance
 
     def applies_to (self, path):

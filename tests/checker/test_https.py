@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2004-2012 Bastian Kleineidam
+# Copyright (C) 2004-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,6 +17,8 @@
 """
 Test news checking.
 """
+import pytest
+
 from tests import need_network
 from . import LinkCheckTest
 
@@ -26,13 +28,21 @@ class TestHttps (LinkCheckTest):
     Test https: link checking.
     """
 
+    @pytest.mark.xfail
     @need_network
     def test_https (self):
-        url = u"https://www.amazon.de/"
+        url = u"https://www.amazon.com/"
+        rurl = u"https://www.amazon.com/"
         resultlines = [
             u"url %s" % url,
             u"cache key %s" % url,
-            u"real url %s" % url,
+            u"real url %s" % rurl,
+            #u"info SSL cipher RC4-SHA, TLSv1/SSLv3.",
+            u"info Access denied by robots.txt, checked only syntax.",
             u"valid",
         ]
-        self.direct(url, resultlines)
+        confargs = dict(
+            #enabledplugins=['SslCertificateCheck'],
+            #SslCertificateCheck=dict(sslcertwarndays=10),
+        )
+        self.direct(url, resultlines, recursionlevel=0, confargs=confargs)

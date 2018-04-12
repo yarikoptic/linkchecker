@@ -1,7 +1,22 @@
 url http://localhost:%(port)d/%(datadir)s/http.html
 cache key http://localhost:%(port)d/%(datadir)s/http.html
 real url http://localhost:%(port)d/%(datadir)s/http.html
-info 11 URLs parsed.
+valid
+
+url clsid:12345-67890
+cache key clsid:12345-67890
+real url clsid:12345-67890
+info Clsid URL ignored.
+valid
+
+url dns://www.example.org
+cache key dns://www.example.org
+real url dns://www.example.org
+valid
+
+url dns://www.example.com
+cache key dns://www.example.com
+real url dns://www.example.com
 valid
 
 url http://www.garantiertnixgutt.bla/
@@ -20,24 +35,22 @@ url /?d=directory&p=page1
 cache key http://localhost:%(port)d/?d=directory&p=page1
 real url http://localhost:%(port)d/?d=directory&p=page1
 name should not be cached
-warning Content with 309B is the same as in URLs (http://localhost:%(port)d/?d=directory&p=page).
 valid
 
 url /?q=ü
 cache key http://localhost:%(port)d/?q=%%C3%%BC
 real url http://localhost:%(port)d/?q=%%C3%%BC
 name html entities
-warning Content with 309B is the same as in URLs (http://localhost:%(port)d/?d=directory&p=page,http://localhost:%(port)d/?d=directory&p=page1).
-valid
-
-url file.css
-cache key http://localhost:%(port)d/tests/checker/data/file.css
-real url http://localhost:%(port)d/tests/checker/data/file.css
 valid
 
 url file.html
 cache key http://localhost:%(port)d/tests/checker/data/file.html
 real url http://localhost:%(port)d/tests/checker/data/file.html
+valid
+
+url file.css
+cache key http://localhost:%(port)d/tests/checker/data/file.css
+real url http://localhost:%(port)d/tests/checker/data/file.css
 valid
 
 url file.asc
@@ -52,16 +65,13 @@ real url http://localhost:%(port)d/tests/checker/data/file.txt
 name CSS urls
 valid
 
-url clsid:12345-67890
-cache key clsid:12345-67890
-real url clsid:12345-67890
-warning Clsid URL ignored.
-valid
-
 url http://example.org/foo/ #a=1,2,3
-cache key http://example.org/foo/%%20#a%%3D1%%2C2%%2C3
-real url http://www.iana.org/domains/example/#a%%3D1%%2C2%%2C3
-info Redirected to `http://www.iana.org/domains/example/'.
-warning Anchor `a%%3D1%%2C2%%2C3' not found. Available anchors: `body', `body-container', `footer', `footer-beta-feedback', `footer-frame', `header', `header-frame', `header-logo', `header-nav', `iana-footer-first', `iana-footer-icann'.
-valid
+cache key http://example.org/foo/%%20
+real url http://example.org/foo/%%20#a=1,2,3
+error
 
+url http://.example.org/
+cache key http://.example.org/
+real url http://.example.org/
+name Error
+error

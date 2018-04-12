@@ -2,7 +2,6 @@ url file://%(curdir)s/%(datadir)s/archive.html
 cache key file://%(curdir)s/%(datadir)s/archive.html
 real url file://%(curdir)s/%(datadir)s/archive.html
 name %(datadir)s/archive.html
-info 2 URLs parsed.
 valid
 
 url file.html
@@ -12,6 +11,5 @@ valid
 
 url http://www.example.com
 cache key http://www.example.com
-real url http://www.iana.org/domains/example/
-info Redirected to `http://www.iana.org/domains/example/'.
+real url http://www.example.com
 valid

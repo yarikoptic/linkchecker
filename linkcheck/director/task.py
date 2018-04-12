@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2006-2011 Bastian Kleineidam
+# Copyright (C) 2006-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,9 +14,12 @@
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-import thread
+try: # Python 3
+    import _thread
+except ImportError: # Python 2
+    import thread as _thread
 from ..decorators import notimplemented
-from .. import log, LOG_CHECK, threader
+from .. import threader
 from . import console
 
 
@@ -28,8 +31,7 @@ class CheckedTask (threader.StoppableThread):
         try:
             self.run_checked()
         except KeyboardInterrupt:
-            log.warn(LOG_CHECK, "interrupt did not reach the main thread")
-            thread.interrupt_main()
+            _thread.interrupt_main()
         except Exception:
             self.internal_error()
 

@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,17 +17,18 @@
 """
 Base class for graph loggers.
 """
-from . import Logger
+from . import _Logger
 from ..decorators import notimplemented
 import re
 
 
-class GraphLogger (Logger):
+class _GraphLogger (_Logger):
     """Provide base method to get node data."""
 
-    def __init__ (self, **args):
+    def __init__ (self, **kwargs):
         """Initialize graph node list and internal id counter."""
-        super(GraphLogger, self).__init__(**args)
+        args = self.get_args(kwargs)
+        super(_GraphLogger, self).__init__(**args)
         self.init_fileoutput(args)
         self.nodes = {}
         self.nodeid = 0
@@ -54,7 +55,7 @@ class GraphLogger (Logger):
             "label": quote(url_data.title if url_data.title else url_data.name),
             "extern": 1 if url_data.extern else 0,
             "checktime": url_data.checktime,
-            "dlsize": url_data.dlsize,
+            "size": url_data.size,
             "dltime": url_data.dltime,
             "edge": quote(url_data.name),
             "valid": 1 if url_data.valid else 0,
@@ -82,7 +83,7 @@ class GraphLogger (Logger):
         """Write end-of-graph marker."""
         pass
 
-    def end_output (self):
+    def end_output (self, **kwargs):
         """Write edges and end of checking info as gml comment."""
         self.write_edges()
         self.end_graph()

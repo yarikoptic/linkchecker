@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,13 +20,21 @@ Handle local file: links.
 
 import re
 import os
-import urlparse
+try:
+    import urlparse
+except ImportError:
+    # Python 3
+    from urllib import parse as urlparse
 import urllib
-import urllib2
+try:
+    from urllib2 import urlopen
+except ImportError:
+    # Python 3
+    from urllib.request import urlopen
 from datetime import datetime
 
-from . import urlbase, get_index_html, get_url_from
-from .. import log, LOG_CHECK, fileutil, LinkCheckerError, url as urlutil
+from . import urlbase, get_index_html
+from .. import log, LOG_CHECK, fileutil, mimeutil, LinkCheckerError, url as urlutil
 from ..bookmarks import firefox
 from .const import WARN_FILE_MISSING_SLASH, WARN_FILE_SYSTEM_PATH
 
@@ -95,10 +103,10 @@ class FileUrl (urlbase.UrlBase):
     """
 
     def init (self, base_ref, base_url, parent_url, recursion_level,
-              aggregate, line, column, name, url_encoding, extern):
+              aggregate, line, column, page, name, url_encoding, extern):
         """Initialize the scheme."""
         super(FileUrl, self).init(base_ref, base_url, parent_url,
-         recursion_level, aggregate, line, column, name, url_encoding, extern)
+         recursion_level, aggregate, line, column, page, name, url_encoding, extern)
         self.scheme = u'file'
 
     def build_base_url(self):
@@ -163,8 +171,6 @@ class FileUrl (urlbase.UrlBase):
             return
         filename = self.get_os_filename()
         self.size = fileutil.get_size(filename)
-        if self.dlsize == -1:
-            self.dlsize = self.size
         self.modified = datetime.utcfromtimestamp(fileutil.get_mtime(filename))
 
     def check_connection (self):
@@ -180,7 +186,7 @@ class FileUrl (urlbase.UrlBase):
             self.set_result(_("directory"))
         else:
             url = fileutil.pathencode(self.url)
-            self.url_connection = urllib2.urlopen(url)
+            self.url_connection = urlopen(url)
             self.check_case_sensitivity()
 
     def check_case_sensitivity (self):
@@ -203,35 +209,13 @@ class FileUrl (urlbase.UrlBase):
     def read_content (self):
         """Return file content, or in case of directories a dummy HTML file
         with links to the files."""
-        if self.size > self.MaxFilesizeBytes:
-            raise LinkCheckerError(_("File size too large"))
         if self.is_directory():
             data = get_index_html(get_files(self.get_os_filename()))
             if isinstance(data, unicode):
                 data = data.encode("iso8859-1", "ignore")
-            size = len(data)
         else:
-            data, size = super(FileUrl, self).read_content()
-        return data, size
-
-    def is_html (self):
-        """Check if file is a HTML file."""
-        return self.ContentMimetypes.get(self.get_content_type()) == "html"
-
-    def is_css (self):
-        """
-        Check if file is a CSS file.
-        """
-        return self.ContentMimetypes.get(self.get_content_type()) == "css"
-
-    def is_file (self):
-        """
-        This is a file.
-
-        @return: True
-        @rtype: bool
-        """
-        return True
+            data = super(FileUrl, self).read_content()
+        return data
 
     def get_os_filename (self):
         """
@@ -266,42 +250,18 @@ class FileUrl (urlbase.UrlBase):
             return True
         if firefox.has_sqlite and firefox.extension.search(self.url):
             return True
-        ctype = self.get_content_type()
-        if ctype in self.ContentMimetypes:
+        if self.content_type in self.ContentMimetypes:
             return True
-        log.debug(LOG_CHECK, "File with content type %r is not parseable.", ctype)
+        log.debug(LOG_CHECK, "File with content type %r is not parseable.", self.content_type)
         return False
 
-    def parse_url (self):
-        """Parse file contents for new links to check."""
-        if self.is_directory():
-            self.parse_html()
-        elif firefox.has_sqlite and firefox.extension.search(self.url):
-            self.parse_firefox()
-        else:
-            mime = self.get_content_type()
-            key = self.ContentMimetypes[mime]
-            getattr(self, "parse_"+key)()
-        self.add_num_url_info()
-
-    def parse_firefox (self):
-        """Parse a Firefox3 bookmark file."""
-        log.debug(LOG_CHECK, "Parsing Firefox bookmarks %s", self)
-        filename = self.get_os_filename()
-        for url, name in firefox.parse_bookmark_file(filename):
-            url_data = get_url_from(url, self.recursion_level+1,
-                self.aggregate, parent_url=self.url, name=name)
-            self.aggregate.urlqueue.put(url_data)
-
-    def get_content_type (self):
+    def set_content_type (self):
         """Return URL content type, or an empty string if content
         type could not be found."""
-        if self.content_type is None:
-            if self.url:
-                self.content_type = fileutil.guess_mimetype(self.url, read=self.get_content)
-            else:
-                self.content_type = u""
-        return self.content_type
+        if self.url:
+            self.content_type = mimeutil.guess_mimetype(self.url, read=self.get_content)
+        else:
+            self.content_type = u""
 
     def get_intern_pattern (self, url=None):
         """Get pattern for intern URL matching.
@@ -320,12 +280,11 @@ class FileUrl (urlbase.UrlBase):
                 url = url[:i+1]
         return re.escape(url)
 
-    def add_url (self, url, line=0, column=0, name=u"", base=None):
+    def add_url (self, url, line=0, column=0, page=0, name=u"", base=None):
         """If a local webroot directory is configured, replace absolute URLs
         with it. After that queue the URL data for checking."""
         webroot = self.aggregate.config["localwebroot"]
         if webroot and url and url.startswith(u"/"):
             url = webroot + url[1:]
-            log.debug(LOG_CHECK, "Applied local webroot `%s' to `%s'.",
-                webroot, url)
-        super(FileUrl, self).add_url(url, line=line, column=column, name=name, base=base)
+            log.debug(LOG_CHECK, "Applied local webroot `%s' to `%s'.", webroot, url)
+        super(FileUrl, self).add_url(url, line=line, column=column, page=page, name=name, base=base)

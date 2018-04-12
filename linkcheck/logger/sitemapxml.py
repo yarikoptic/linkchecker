@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2012 Bastian Kleineidam
+# Copyright (C) 2012-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -33,12 +33,20 @@ ChangeFreqs = (
 HTTP_SCHEMES = (u'http:', u'https:')
 HTML_TYPES = ('text/html', "application/xhtml+xml")
 
-class SitemapXmlLogger (xmllog.XMLLogger):
+class SitemapXmlLogger (xmllog._XMLLogger):
     """Sitemap XML output according to http://www.sitemaps.org/protocol.html
     """
 
-    def __init__ (self, **args):
+    LoggerName = 'sitemap'
+
+    LoggerArgs = {
+        "filename": "linkchecker-out.sitemap.xml",
+        "encoding": "utf-8",
+    }
+
+    def __init__ (self, **kwargs):
         """Initialize graph node list and internal id counter."""
+        args = self.get_args(kwargs)
         super(SitemapXmlLogger, self).__init__(**args)
         # All URLs must have the given prefix, which is determined
         # by the first logged URL.
@@ -105,7 +113,7 @@ class SitemapXmlLogger (xmllog.XMLLogger):
         self.xml_endtag(u'url')
         self.flush()
 
-    def end_output (self):
+    def end_output (self, **kwargs):
         """Write XML end tag."""
         self.xml_endtag(u"urlset")
         self.xml_end_output()

@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -161,7 +161,10 @@ EXAMPLE
 
 import re
 import codecs
-import htmlentitydefs
+try:
+    from htmlentitydefs import name2codepoint
+except ImportError:
+    from html.entities import name2codepoint
 
 
 def _resolve_entity (mo):
@@ -185,7 +188,7 @@ def _resolve_entity (mo):
         except (ValueError, OverflowError):
             return u''
     else:
-        num = htmlentitydefs.name2codepoint.get(ent)
+        num = name2codepoint.get(ent)
     if num is None or num < 0:
         # unknown entity -> ignore
         return u''
@@ -195,7 +198,7 @@ def _resolve_entity (mo):
         return u''
 
 
-_entity_re = re.compile(ur'(?i)&(#x?)?(?P<entity>[0-9a-z]+);')
+_entity_re = re.compile(u'(?i)&(#x?)?(?P<entity>[0-9a-z]+);')
 
 def resolve_entities (s):
     """

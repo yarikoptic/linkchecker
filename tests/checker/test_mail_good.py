@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2004-2012 Bastian Kleineidam
+# Copyright (C) 2004-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -35,7 +35,6 @@ class TestMailGood (MailTest):
           u"url %s" % url,
           u"cache key mailto:calvin@users.sourceforge.net",
           u"real url %s" % url,
-          u"info Verified address calvin@users.sourceforge.net: 250 <calvin@users.sourceforge.net> is deliverable.",
           u"valid",
         ]
         self.direct(url, resultlines)
@@ -45,7 +44,6 @@ class TestMailGood (MailTest):
           u"url %s" % url,
           u"cache key mailto:calvin@users.sourceforge.net",
           u"real url %s" % url,
-          u"info Verified address calvin@users.sourceforge.net: 250 <calvin@users.sourceforge.net> is deliverable.",
           u"valid",
         ]
         self.direct(url, resultlines)
@@ -54,7 +52,6 @@ class TestMailGood (MailTest):
             u"url %s" % url,
             u"cache key mailto:calvin@users.sourceforge.net",
             u"real url %s" % url,
-            u"info Verified address calvin@users.sourceforge.net: 250 <calvin@users.sourceforge.net> is deliverable.",
             u"valid",
         ]
         self.direct(url, resultlines)
@@ -63,7 +60,6 @@ class TestMailGood (MailTest):
             u"url %s" % url,
             u"cache key mailto:o'hara@users.sourceforge.net",
             u"real url %s" % url,
-            u"warning Unverified address: 550 <o'hara@users.sourceforge.net> Unrouteable address.",
             u"valid",
         ]
         self.direct(url, resultlines)
@@ -74,20 +70,16 @@ class TestMailGood (MailTest):
             u"cache key mailto:calvin@users.sourceforge.net,"
              u"calvin_CC@users.sourceforge.net,calvin_cc@users.sourceforge.net",
             u"real url %s" % url,
-           u"info Verified address calvin@users.sourceforge.net: 250 <calvin@users.sourceforge.net> is deliverable.",
-            u"warning Unverified address: 550 <calvin_CC@users.sourceforge.net> Unrouteable address.",
-            u"warning Unverified address: 550 <calvin_cc@users.sourceforge.net> Unrouteable address.",
             u"valid",
         ]
         self.direct(url, resultlines)
-        url = self.norm(u"mailto:news-admins@freecode.com?subject="
+        url = self.norm(u"mailto:news-admins@freshcode.club?subject="
                 "Re:%20[fm%20#11093]%20(news-admins)%20Submission%20"
                 "report%20-%20Pretty%20CoLoRs")
         resultlines = [
             u"url %s" % url,
-            u"cache key mailto:news-admins@freecode.com",
+            u"cache key mailto:news-admins@freshcode.club",
             u"real url %s" % url,
-            u"warning Unverified address: 502 5.5.1 VRFY command is disabled.",
             u"valid",
         ]
         self.direct(url, resultlines)
@@ -102,7 +94,6 @@ class TestMailGood (MailTest):
             u"url %s" % url,
             u"cache key mailto:calvin@users.sourceforge.net",
             u"real url %s" % qurl,
-            u"info Verified address calvin@users.sourceforge.net: 250 <calvin@users.sourceforge.net> is deliverable.",
             u"valid",
         ]
         self.direct(url, resultlines)
@@ -112,7 +103,6 @@ class TestMailGood (MailTest):
             u"url %s" % url,
             u"cache key mailto:calvin@users.sourceforge.net",
             u"real url %s" % qurl,
-            u"info Verified address calvin@users.sourceforge.net: 250 <calvin@users.sourceforge.net> is deliverable.",
             u"valid",
         ]
         self.direct(url, resultlines)
@@ -121,7 +111,7 @@ class TestMailGood (MailTest):
             u"url %s" % url,
             u"cache key mailto:",
             u"real url %s" % url,
-            u"warning No mail addresses found in `%s'." % url,
+            u"warning No mail addresses or email subject found in `%s'." % url,
             u"valid",
         ]
         self.direct(url, resultlines)
@@ -131,7 +121,6 @@ class TestMailGood (MailTest):
         addr = u'abc%sdef@sourceforge.net' % char
         url = u"mailto:%s" % addr
         self.mail_valid(url,
-          warning=u"Unverified address: 550 <%s> Unrouteable address." % addr,
           cache_key=url)
 
     @need_network
@@ -162,7 +151,19 @@ class TestMailGood (MailTest):
             u"url %s" % url,
             u"cache key %s" % mailto,
             u"real url %s" % url,
-            u"warning Unverified address: 550 <lvin@users.sourceforge.net> Unrouteable address.",
+            u"valid",
+        ]
+        self.direct(url, resultlines)
+
+    @need_network
+    def test_mail_subject(self):
+        url = u"mailto:?subject=Halli hallo"
+        nurl = self.norm(url)
+        curl = u"mailto:"
+        resultlines = [
+            u"url %s" % url,
+            u"cache key %s" % curl,
+            u"real url %s" % nurl,
             u"valid",
         ]
         self.direct(url, resultlines)

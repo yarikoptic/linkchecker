@@ -1,13 +1,11 @@
 Project: LinkChecker
-Version: 8.3
-Release-Focus: Minor bugfixes
-Hide: N
-Website-URL: http://wummel.github.com/linkchecker/
+Version: 9.3
+Website-URL: http://wummel.github.io/linkchecker/
 Changelog-URL: https://github.com/wummel/linkchecker/blob/master/doc/changelog.txt
-Source-Package-URL: http://github.com/downloads/wummel/linkchecker/LinkChecker-${version}.tar.xz
+Source-Package-URL: https://pypi.python.org/packages/source/L/LinkChecker/LinkChecker-${version}.tar.gz
 Debian-Package-URL: http://packages.debian.org/linkchecker
 GIT-Tree-URL: https://github.com/wummel/linkchecker.git
-Windows-installer-URL: http://github.com/downloads/wummel/linkchecker/LinkChecker-${version}.exe
+Windows-installer-URL: http://wummel.github.io/linkchecker/dist/LinkChecker-${version}.exe
 
-Storing of ignore lines in the GUI configuration has been fixed.
-Also the project moved to Github.
+This file is now only used for update checks since freecode.com is
+not functional anymore.

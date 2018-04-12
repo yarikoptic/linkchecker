@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,23 +23,22 @@ from time import time as _time
 from .. import log, LOG_CACHE
 
 
-LARGE_QUEUE_THRESHOLD = 1000
-FRONT_CHUNK_SIZE = 100
-
-class Timeout (StandardError):
+class Timeout(Exception):
     """Raised by join()"""
     pass
 
-class Empty (StandardError):
+class Empty(Exception):
     """Exception raised by get()."""
     pass
 
+
+NUM_PUTS_CLEANUP = 10000
 
 class UrlQueue (object):
     """A queue supporting several consumer tasks. The task_done() idea is
     from the Python 2.5 implementation of Queue.Queue()."""
 
-    def __init__ (self, max_allowed_puts=None):
+    def __init__ (self, max_allowed_urls=None):
         """Initialize the queue state and task counters."""
         # Note: don't put a maximum size on the queue since it would
         # lead to deadlocks when all worker threads called put().
@@ -55,14 +54,14 @@ class UrlQueue (object):
         self.all_tasks_done = threading.Condition(self.mutex)
         self.unfinished_tasks = 0
         self.finished_tasks = 0
-        self.in_progress = {}
-        self.seen = {}
+        self.in_progress = 0
         self.shutdown = False
         # Each put() decreases the number of allowed puts.
         # This way we can restrict the number of URLs that are checked.
-        if max_allowed_puts is not None and max_allowed_puts <= 0:
-            raise ValueError("Non-positive number of allowed puts: %d" % max_allowed_puts)
-        self.allowed_puts = max_allowed_puts
+        if max_allowed_urls is not None and max_allowed_urls <= 0:
+            raise ValueError("Non-positive number of allowed URLs: %d" % max_allowed_urls)
+        self.max_allowed_urls = max_allowed_urls
+        self.num_puts = 0
 
     def qsize (self):
         """Return the approximate size of the queue (not reliable!)."""
@@ -103,15 +102,8 @@ class UrlQueue (object):
                 if remaining <= 0.0:
                     raise Empty()
                 self.not_empty.wait(remaining)
-        url_data = self.queue.popleft()
-        if url_data.has_result:
-            # Already checked and copied from cache.
-            pass
-        else:
-            key = url_data.cache_url_key
-            assert key is not None
-            self.in_progress[key] = url_data
-        return url_data
+        self.in_progress += 1
+        return self.queue.popleft()
 
     def put (self, item):
         """Put an item into the queue.
@@ -123,27 +115,45 @@ class UrlQueue (object):
 
     def _put (self, url_data):
         """Put URL in queue, increase number of unfished tasks."""
-        if self.shutdown:
-            # don't accept more URLs
+        if self.shutdown or self.max_allowed_urls == 0:
             return
-        if self.allowed_puts is not None:
-            if self.allowed_puts == 0:
-                # no more puts allowed
-                return
-            self.allowed_puts -= 1
-        log.debug(LOG_CACHE, "queueing %s", url_data)
-        key = url_data.cache_url_key
-        # cache key is None for URLs with invalid syntax
-        assert key is not None or url_data.has_result, "invalid cache key in %s" % url_data
-        if key in self.seen:
-            self.seen[key] += 1
-            if key is not None:
-                # do not check duplicate URLs
-                return
+        log.debug(LOG_CACHE, "queueing %s", url_data.url)
+        key = url_data.cache_url
+        cache = url_data.aggregate.result_cache
+        if cache.has_result(key):
+            return
+        if url_data.has_result:
+            self.queue.appendleft(url_data)
         else:
-            self.seen[key] = 0
-        self.queue.append(url_data)
+            assert key is not None, "no result for None key: %s" % url_data
+            if self.max_allowed_urls is not None:
+                self.max_allowed_urls -= 1
+            self.num_puts += 1
+            if self.num_puts >= NUM_PUTS_CLEANUP:
+                self.cleanup()
+            self.queue.append(url_data)
         self.unfinished_tasks += 1
+        cache.add_result(key, None)  # add none value to cache to prevent checking this url multiple times
+
+    def cleanup(self):
+        """Move cached elements to top."""
+        self.num_puts = 0
+        cached = []
+        for i, url_data in enumerate(self.queue):
+            key = url_data.cache_url
+            cache = url_data.aggregate.result_cache
+            if cache.has_non_empty_result(key):
+                cached.append(i)
+        for pos in cached:
+            self._move_to_top(pos)
+
+    def _move_to_top(self, pos):
+        """Move element at given position to top of queue."""
+        if pos > 0:
+            self.queue.rotate(-pos)
+            item = self.queue.popleft()
+            self.queue.rotate(pos)
+            self.queue.appendleft(item)
 
     def task_done (self, url_data):
         """
@@ -161,19 +171,10 @@ class UrlQueue (object):
         placed in the queue.
         """
         with self.all_tasks_done:
-            log.debug(LOG_CACHE, "task_done %s", url_data)
-            # check for aliases (eg. through HTTP redirections)
-            if hasattr(url_data, "aliases"):
-                for key in url_data.aliases:
-                    if key in self.seen:
-                        self.seen[key] += 1
-                    else:
-                        self.seen[key] = 0
-            key = url_data.cache_url_key
-            if key in self.in_progress:
-                del self.in_progress[key]
+            log.debug(LOG_CACHE, "task_done %s", url_data.url)
             self.finished_tasks += 1
             self.unfinished_tasks -= 1
+            self.in_progress -= 1
             if self.unfinished_tasks <= 0:
                 if self.unfinished_tasks < 0:
                     raise ValueError('task_done() called too many times')
@@ -216,7 +217,5 @@ class UrlQueue (object):
 
     def status (self):
         """Get tuple (finished tasks, in progress, queue size)."""
-        with self.mutex:
-            return (self.finished_tasks,
-                    len(self.in_progress), len(self.queue))
-
+        # no need to acquire self.mutex since the numbers are unreliable anyways.
+        return (self.finished_tasks, self.in_progress, len(self.queue))

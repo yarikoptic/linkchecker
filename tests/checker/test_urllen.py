@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2012 Bastian Kleineidam
+# Copyright (C) 2012-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 Test URL length checks.
 """
 from . import LinkCheckTest
+from linkcheck.checker.const import URL_MAX_LENGTH
 
 
 class TestURLLength(LinkCheckTest):
@@ -26,28 +27,14 @@ class TestURLLength(LinkCheckTest):
     """
 
     def test_url_warn(self):
-        url = u"http://www.example.org/%s" % (u"a" * 256)
-        attrs = self.get_attrs(url=url)
-        attrs['nurl'] = u"http://www.iana.org/domains/example/"
-        resultlines = [
-            u"url %(url)s" % attrs,
-            u"cache key %(url)s" % attrs,
-            u"real url %(nurl)s" % attrs,
-            u"info Redirected to `%(nurl)s'." % attrs,
-            u"warning URL length 279 is longer than 255.",
-            u"valid",
-        ]
-        self.direct(url, resultlines)
-
-    def test_url_error(self):
-        url = u"http://www.example.org/%s" % ("a" * 2000)
+        url = u"http://www.example.org/" + (u"a" * URL_MAX_LENGTH)
         attrs = self.get_attrs(url=url)
         attrs['nurl'] = self.norm(url)
         resultlines = [
             u"url %(nurl)s" % attrs,
             u"cache key %(nurl)s" % attrs,
             u"real url %(nurl)s" % attrs,
+            u"warning URL length %d is longer than %d." % (len(url), URL_MAX_LENGTH),
             u"error",
         ]
         self.direct(url, resultlines)
-

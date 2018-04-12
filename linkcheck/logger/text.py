@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,11 +18,11 @@
 The default text logger.
 """
 import time
-from . import Logger
+from . import _Logger
 from .. import ansicolor, strformat, configuration, i18n
 
 
-class TextLogger (Logger):
+class TextLogger (_Logger):
     """
     A text logger, colorizing the output if possible.
 
@@ -34,10 +34,27 @@ class TextLogger (Logger):
     Unknown keywords will be ignored.
     """
 
-    def __init__ (self, **args):
-        """
-        Initialize error counter and optional file output.
-        """
+    LoggerName = 'text'
+
+    LoggerArgs = {
+        "filename": "linkchecker-out.txt",
+        'colorparent':  "default",
+        'colorurl':     "default",
+        'colorname':    "default",
+        'colorreal':    "cyan",
+        'colorbase':    "purple",
+        'colorvalid':   "bold;green",
+        'colorinvalid': "bold;red",
+        'colorinfo':    "default",
+        'colorwarning': "bold;yellow",
+        'colordltime':  "default",
+        'colordlsize':  "default",
+        'colorreset':   "default",
+    }
+
+    def __init__ (self, **kwargs):
+        """Initialize error counter and optional file output."""
+        args = self.get_args(kwargs)
         super(TextLogger, self).__init__(**args)
         self.output_encoding = args.get("encoding", i18n.default_encoding)
         self.init_fileoutput(args)
@@ -106,8 +123,8 @@ class TextLogger (Logger):
             self.write_checktime(url_data)
         if url_data.dltime >= 0 and self.has_part('dltime'):
             self.write_dltime(url_data)
-        if url_data.dlsize >= 0 and self.has_part('dlsize'):
-            self.write_dlsize(url_data)
+        if url_data.size >= 0 and self.has_part('dlsize'):
+            self.write_size(url_data)
         if url_data.info and self.has_part('info'):
             self.write_info(url_data)
         if url_data.modified and self.has_part('modified'):
@@ -139,8 +156,12 @@ class TextLogger (Logger):
         """Write url_data.parent_url."""
         self.write(self.part('parenturl') + self.spaces("parenturl"))
         txt = url_data.parent_url
-        txt += _(", line %d") % url_data.line
-        txt += _(", col %d") % url_data.column
+        if url_data.line > 0:
+            txt += _(", line %d") % url_data.line
+        if url_data.column > 0:
+            txt += _(", col %d") % url_data.column
+        if url_data.page > 0:
+            txt += _(", page %d") % url_data.page
         self.writeln(txt, color=self.colorparent)
 
     def write_base (self, url_data):
@@ -159,10 +180,10 @@ class TextLogger (Logger):
         self.writeln(_("%.3f seconds") % url_data.dltime,
                      color=self.colordltime)
 
-    def write_dlsize (self, url_data):
-        """Write url_data.dlsize."""
+    def write_size (self, url_data):
+        """Write url_data.size."""
         self.write(self.part("dlsize") + self.spaces("dlsize"))
-        self.writeln(strformat.strsize(url_data.dlsize),
+        self.writeln(strformat.strsize(url_data.size),
                      color=self.colordlsize)
 
     def write_checktime (self, url_data):
@@ -200,13 +221,19 @@ class TextLogger (Logger):
             self.write(u": " + url_data.result, color=color)
         self.writeln()
 
-    def write_outro (self):
+    def write_outro (self, interrupt=False):
         """Write end of checking message."""
         self.writeln()
+        if interrupt:
+            self.writeln(_("The check has been interrupted; results are not complete."))
         self.write(_("That's it.") + " ")
-        self.write(_n("%d link checked.", "%d links checked.",
+        self.write(_n("%d link", "%d links",
                       self.stats.number) % self.stats.number)
         self.write(u" ")
+        if self.stats.num_urls is not None:
+            self.write(_n("in %d URL", "in %d URLs",
+                          self.stats.num_urls) % self.stats.num_urls)
+        self.write(u" checked. ")
         warning_text = _n("%d warning found", "%d warnings found",
              self.stats.warnings_printed) % self.stats.warnings_printed
         if self.stats.warnings_printed:
@@ -243,12 +270,8 @@ class TextLogger (Logger):
         """Write check statistic info."""
         self.writeln()
         self.writeln(_("Statistics:"))
-        if self.stats.downloaded_bytes > 0:
-            self.writeln(_("Downloaded: %s") % strformat.strsize(self.stats.downloaded_bytes))
-        hitsmisses = strformat.str_cache_stats(*self.stats.robots_txt_stats)
-        self.writeln(_("Robots.txt cache: %s") % hitsmisses)
-        if len(self.stats.domains) > 1:
-            self.writeln(_("Number of domains: %d") % len(self.stats.domains))
+        if self.stats.downloaded_bytes is not None:
+            self.writeln(_("Downloaded: %s.") % strformat.strsize(self.stats.downloaded_bytes))
         if self.stats.number > 0:
             self.writeln(_(
               "Content types: %(image)d image, %(text)d text, %(video)d video, "
@@ -261,10 +284,12 @@ class TextLogger (Logger):
         else:
             self.writeln(_("No statistics available since no URLs were checked."))
 
-    def end_output (self):
+    def end_output (self, **kwargs):
         """Write end of output info, and flush all output buffers."""
+        self.stats.downloaded_bytes = kwargs.get("downloaded_bytes")
+        self.stats.num_urls = kwargs.get("num_urls")
         if self.has_part('stats'):
             self.write_stats()
         if self.has_part('outro'):
-            self.write_outro()
+            self.write_outro(interrupt=kwargs.get("interrupt"))
         self.close_fileoutput()

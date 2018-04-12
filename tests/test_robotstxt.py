@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2006-2012 Bastian Kleineidam
+# Copyright (C) 2006-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -290,3 +290,11 @@ class TestRobotsTxt (unittest.TestCase):
         self.check_url("spam", "/cgi-bin/foo/bar", False)
         self.check_url("spam", "/cgi-bin?a=1", False)
         self.check_url("spam", "/", True)
+
+    def test_sitemap(self):
+        lines = [
+            "Sitemap: bla",
+        ]
+        self.rp.parse(lines)
+        self.assertTrue(len(self.rp.sitemap_urls) > 0)
+        self.assertTrue(self.rp.sitemap_urls[0] == ("bla", 1))

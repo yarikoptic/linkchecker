@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -28,18 +28,26 @@ import codecs
 # more supported languages are added in init()
 supported_languages = set(['en'])
 default_language = default_encoding = None
+default_directory = None
+default_domain = None
 
 def install_builtin (translator, do_unicode):
     """Install _() and _n() gettext methods into default namespace."""
-    import __builtin__
-    if do_unicode:
-        __builtin__.__dict__['_'] = translator.ugettext
+    try:
+        import __builtin__ as builtins
+    except ImportError:
+        # Python 3
+        import builtins
+    # Python 3 has no ugettext
+    has_unicode = hasattr(translator, 'ugettext')
+    if do_unicode and has_unicode:
+        builtins.__dict__['_'] = translator.ugettext
         # also install ngettext
-        __builtin__.__dict__['_n'] = translator.ungettext
+        builtins.__dict__['_n'] = translator.ungettext
     else:
-        __builtin__.__dict__['_'] = translator.gettext
+        builtins.__dict__['_'] = translator.gettext
         # also install ngettext
-        __builtin__.__dict__['_n'] = translator.ngettext
+        builtins.__dict__['_n'] = translator.ngettext
 
 class Translator (gettext.GNUTranslations):
     """A translation class always installing its gettext methods into the
@@ -62,7 +70,9 @@ class NullTranslator (gettext.NullTranslations):
 def init (domain, directory, loc=None):
     """Initialize this gettext i18n module. Searches for supported languages
     and installs the gettext translator class."""
-    global default_language, default_encoding
+    global default_language, default_encoding, default_domain, default_directory
+    default_directory = directory
+    default_domain = domain
     if os.path.isdir(directory):
         # get supported languages
         for lang in os.listdir(directory):
@@ -81,9 +91,13 @@ def init (domain, directory, loc=None):
     # Even if the default language is not supported, the encoding should
     # be installed. Otherwise the Python installation is borked.
     default_encoding = encoding
-    # install translation service routines into default namespace
-    translator = get_translator(domain, directory,
-                                languages=[default_language], fallback=True)
+    install_language(default_language)
+
+
+def install_language(language):
+    """Install translation service routines into default namespace."""
+    translator = get_translator(default_domain, default_directory,
+        languages=[get_lang(language)], fallback=True)
     do_unicode = True
     translator.install(do_unicode)
 

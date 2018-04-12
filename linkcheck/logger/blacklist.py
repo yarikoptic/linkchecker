@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,20 +20,26 @@ A blacklist logger.
 
 import os
 import codecs
-from . import Logger
+from linkcheck.configuration import get_user_data
+from . import _Logger
 
 
-class BlacklistLogger (Logger):
+class BlacklistLogger (_Logger):
     """
     Updates a blacklist of wrong links. If a link on the blacklist
     is working (again), it is removed from the list. So after n days
     we have only links on the list which failed for n days.
     """
 
-    def __init__ (self, **args):
-        """
-        Intialize with old blacklist data (if found, else not).
-        """
+    LoggerName = "blacklist"
+
+    LoggerArgs = {
+        "filename": os.path.join(get_user_data(), "blacklist"),
+    }
+
+    def __init__ (self, **kwargs):
+        """Intialize with old blacklist data (if found, else not)."""
+        args = self.get_args(kwargs)
         super(BlacklistLogger, self).__init__(**args)
         self.init_fileoutput(args)
         self.blacklist = {}
@@ -50,7 +56,8 @@ class BlacklistLogger (Logger):
         """
         Put invalid url in blacklist, delete valid url from blacklist.
         """
-        key = url_data.cache_url_key
+        key = (url_data.parent_url, url_data.cache_url)
+        key = repr(key)
         if key in self.blacklist:
             if url_data.valid:
                 del self.blacklist[key]
@@ -60,7 +67,7 @@ class BlacklistLogger (Logger):
             if not url_data.valid:
                 self.blacklist[key] = 1
 
-    def end_output (self):
+    def end_output (self, **kwargs):
         """
         Write blacklist file.
         """
@@ -85,7 +92,7 @@ class BlacklistLogger (Logger):
         """
         oldmask = os.umask(0077)
         for key, value in self.blacklist.items():
-            self.write(u"%d %s%s" % (value, key, os.linesep))
+            self.write(u"%d %s%s" % (value, repr(key), os.linesep))
         self.close_fileoutput()
         # restore umask
         os.umask(oldmask)

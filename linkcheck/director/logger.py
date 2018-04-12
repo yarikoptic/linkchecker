@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2006-2012 Bastian Kleineidam
+# Copyright (C) 2006-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,7 +16,10 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 """Logger for aggregator instances"""
 import threading
-import thread
+try: # Python 3
+    import _thread
+except ImportError: # Python 2
+    import thread as _thread
 from ..decorators import synchronized
 _lock = threading.Lock()
 
@@ -29,7 +32,6 @@ class Logger (object):
         self.loggers = [config['logger']]
         self.loggers.extend(config['fileoutput'])
         self.verbose = config["verbose"]
-        self.complete = config["complete"]
         self.warnings = config["warnings"]
 
     def start_log_output (self):
@@ -39,22 +41,15 @@ class Logger (object):
         for logger in self.loggers:
             logger.start_output()
 
-    def end_log_output (self):
+    def end_log_output (self, **kwargs):
         """
         End output of all configured loggers.
         """
         for logger in self.loggers:
-            logger.end_output()
-
-    def add_statistics(self, robots_txt_stats, download_stats):
-        """Add statistics to logger."""
-        for logger in self.loggers:
-            logger.add_statistics(robots_txt_stats, download_stats)
+            logger.end_output(**kwargs)
 
     def do_print (self, url_data):
         """Determine if URL entry should be logged or not."""
-        if self.complete:
-            return True
         if self.verbose:
             return True
         if self.warnings and url_data.warnings:
@@ -68,9 +63,8 @@ class Logger (object):
         do_print = self.do_print(url_data)
         # Only send a transport object to the loggers, not the complete
         # object instance.
-        transport = url_data.to_wire()
         for log in self.loggers:
-            log.log_filter_url(transport, do_print)
+            log.log_filter_url(url_data, do_print)
 
     @synchronized(_lock)
     def log_internal_error (self):
@@ -84,4 +78,4 @@ class Logger (object):
             if logger.is_active:
                 break
         else:
-            thread.interrupt_main()
+            _thread.interrupt_main()

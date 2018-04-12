@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2005-2012 Bastian Kleineidam
+# Copyright (C) 2005-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -43,7 +43,7 @@ def get_intern_pattern (url):
     if args[0] in ('http', 'https'):
         args[0] = 'https?'
     args[1] = r"(www\.|)%s" % args[1]
-    return "%s://%s%s" % tuple(args)
+    return "^%s://%s%s" % tuple(args)
 
 
 class InternPatternUrl (urlbase.UrlBase):

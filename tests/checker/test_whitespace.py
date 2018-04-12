@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2004-2012 Bastian Kleineidam
+# Copyright (C) 2004-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,26 +29,22 @@ class TestWhitespace (LinkCheckTest):
         # Leading whitespace
         url = u" http://www.example.org/"
         attrs = self.get_attrs(url=url)
-        attrs['nurl'] = "http://www.iana.org/domains/example/"
         attrs['surl'] = url.strip()
         resultlines = [
             u"url %(surl)s" % attrs,
             u"cache key %(surl)s" % attrs,
-            u"real url %(nurl)s" % attrs,
-            u"info Redirected to `%(nurl)s'." % attrs,
+            u"real url %(surl)s" % attrs,
             u"warning Leading or trailing whitespace in URL `%(url)s'." % attrs,
             u"valid",
         ]
         self.direct(url, resultlines)
         url = u"\nhttp://www.example.org/"
         attrs = self.get_attrs(url=url)
-        attrs['nurl'] = "http://www.iana.org/domains/example/"
         attrs['surl'] = url.strip()
         resultlines = [
             u"url %(surl)s" % attrs,
             u"cache key %(surl)s" % attrs,
-            u"real url %(nurl)s" % attrs,
-            u"info Redirected to `%(nurl)s'." % attrs,
+            u"real url %(surl)s" % attrs,
             u"warning Leading or trailing whitespace in URL `%(url)s'." % attrs,
             u"valid",
         ]
@@ -57,23 +53,19 @@ class TestWhitespace (LinkCheckTest):
     def test_trailing_whitespace (self):
         # Trailing whitespace
         url = u"http://www.example.org/ "
-        nurl = "http://www.iana.org/domains/example/"
         resultlines = [
             u"url %s" % url.strip(),
             u"cache key %s" % url.strip(),
-            u"real url %s" % nurl,
-            u"info Redirected to `%s'." % nurl,
+            u"real url %s" % url.strip(),
             u"warning Leading or trailing whitespace in URL `%s'." % url,
             u"valid",
         ]
         self.direct(url, resultlines)
         url = u"http://www.example.org/\n"
-        nurl = "http://www.iana.org/domains/example/"
         resultlines = [
             u"url %s" % url.strip(),
             u"cache key %s" % url.strip(),
-            u"real url %s" % nurl,
-            u"info Redirected to `%s'." % nurl,
+            u"real url %s" % url.strip(),
             u"warning Leading or trailing whitespace in URL `%s'." % url,
             u"valid",
         ]

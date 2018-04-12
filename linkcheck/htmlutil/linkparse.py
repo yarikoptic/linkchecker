@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2001-2012 Bastian Kleineidam
+# Copyright (C) 2001-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -46,7 +46,7 @@ LinkTags = {
     'html':     [u'manifest'], # HTML5
     'iframe':   [u'src', u'longdesc'],
     'ilayer':   [u'background'],
-    'img':      [u'src', u'lowsrc', u'longdesc', u'usemap'],
+    'img':      [u'src', u'lowsrc', u'longdesc', u'usemap', u'srcset'],
     'input':    [u'src', u'usemap', u'formaction'],
     'ins':      [u'cite'],
     'isindex':  [u'action'],
@@ -64,7 +64,7 @@ LinkTags = {
     'track':    [u'src'], # HTML5
     'video':    [u'src'], # HTML5
     'xmp':      [u'href'],
-    None:       [u'style'],
+    None:       [u'style', u'itemtype'],
 }
 
 # HTML anchor tags
@@ -95,7 +95,7 @@ def strip_c_comments (text):
     return c_comment_re.sub('', text)
 
 
-class StopParse (StandardError):
+class StopParse(Exception):
     """Raised when parsing should stop."""
     pass
 
@@ -174,50 +174,59 @@ def is_meta_url (attr, attrs):
     return res
 
 
+def is_form_get(attr, attrs):
+    """Check if this is a GET form action URL."""
+    res = False
+    if attr == "action":
+        method = attrs.get_true('method', u'').lower()
+        res = method != 'post'
+    return res
+
+
 class LinkFinder (TagFinder):
     """Find HTML links, and apply them to the callback function with the
     format (url, lineno, column, name, codebase)."""
 
-    def __init__ (self, callback, tags=None):
+    def __init__ (self, callback, tags):
         """Store content in buffer and initialize URL list."""
         super(LinkFinder, self).__init__()
         self.callback = callback
-        if tags is None:
-            self.tags = LinkTags
-        else:
-            self.tags = tags
+        # set universal tag attributes using tagname None
+        self.universal_attrs = set(tags.get(None, []))
+        self.tags = dict()
+        for  tag, attrs in tags.items():
+            self.tags[tag] = set(attrs)
+            # add universal tag attributes
+            self.tags[tag].update(self.universal_attrs)
         self.base_ref = u''
-        log.debug(LOG_CHECK, "link finder")
 
     def start_element (self, tag, attrs):
         """Search for links and store found URLs in a list."""
         log.debug(LOG_CHECK, "LinkFinder tag %s attrs %s", tag, attrs)
-        log.debug(LOG_CHECK, "line %d col %d old line %d old col %d",
-            self.parser.lineno(), self.parser.column(),
-            self.parser.last_lineno(), self.parser.last_column())
+        log.debug(LOG_CHECK, "line %d col %d old line %d old col %d", self.parser.lineno(), self.parser.column(), self.parser.last_lineno(), self.parser.last_column())
         if tag == "base" and not self.base_ref:
-            self.base_ref = unquote(attrs.get_true("href", u''))
-        tagattrs = self.tags.get(tag, [])
-        # add universal tag attributes using tagname None
-        tagattrs.extend(self.tags.get(None, []))
-        # eliminate duplicate tag attributes
-        tagattrs = set(tagattrs)
+            self.base_ref = attrs.get_true("href", u'')
+        tagattrs = self.tags.get(tag, self.universal_attrs)
         # parse URLs in tag (possibly multiple URLs in CSS styles)
-        for attr in tagattrs:
-            if attr not in attrs:
-                continue
+        for attr in sorted(tagattrs.intersection(attrs)):
             if tag == "meta" and not is_meta_url(attr, attrs):
+                continue
+            if tag == "form" and not is_form_get(attr, attrs):
                 continue
             # name of this link
             name = self.get_link_name(tag, attrs, attr)
             # possible codebase
             base = u''
             if tag  == 'applet':
-                base = unquote(attrs.get_true('codebase', u''))
+                base = attrs.get_true('codebase', u'')
             if not base:
                 base = self.base_ref
             # note: value can be None
-            value = unquote(attrs.get(attr))
+            value = attrs.get(attr)
+            if tag == 'link' and attrs.get('rel') == 'dns-prefetch':
+                if ':' in value:
+                    value = value.split(':', 1)[1]
+                value = 'dns:' + value.rstrip('/')
             # parse tag for URLs
             self.parse_tag(tag, attr, value, name, base)
         log.debug(LOG_CHECK, "LinkFinder finished tag %s", tag)
@@ -230,44 +239,45 @@ class LinkFinder (TagFinder):
             data = data.decode(self.parser.encoding, "ignore")
             name = linkname.href_name(data)
             if not name:
-                name = unquote(attrs.get_true('title', u''))
+                name = attrs.get_true('title', u'')
         elif tag == 'img':
-            name = unquote(attrs.get_true('alt', u''))
+            name = attrs.get_true('alt', u'')
             if not name:
-                name = unquote(attrs.get_true('title', u''))
+                name = attrs.get_true('title', u'')
         else:
             name = u""
         return name
 
-    def parse_tag (self, tag, attr, url, name, base):
+    def parse_tag (self, tag, attr, value, name, base):
         """Add given url data to url list."""
         assert isinstance(tag, unicode), repr(tag)
         assert isinstance(attr, unicode), repr(attr)
         assert isinstance(name, unicode), repr(name)
         assert isinstance(base, unicode), repr(base)
-        assert isinstance(url, unicode) or url is None, repr(url)
-        urls = []
+        assert isinstance(value, unicode) or value is None, repr(value)
         # look for meta refresh
-        if tag == u'meta' and url:
-            mo = refresh_re.match(url)
+        if tag == u'meta' and value:
+            mo = refresh_re.match(value)
             if mo:
-                urls.append(mo.group("url"))
+                self.found_url(mo.group("url"), name, base)
             elif attr != 'content':
-                urls.append(url)
-        elif attr == u'style' and url:
-            for mo in css_url_re.finditer(url):
-                u = mo.group("url")
-                urls.append(unquote(u, matching=True))
+                self.found_url(value, name, base)
+        elif attr == u'style' and value:
+            for mo in css_url_re.finditer(value):
+                url = unquote(mo.group("url"), matching=True)
+                self.found_url(url, name, base)
         elif attr == u'archive':
-            urls.extend(url.split(u','))
+            for url in value.split(u','):
+                self.found_url(url, name, base)
+        elif attr == u'srcset':
+            for img_candidate in value.split(u','):
+                url = img_candidate.split()[0]
+                self.found_url(url, name, base)
         else:
-            urls.append(url)
-        if not urls:
-            # no url found
-            return
-        for u in urls:
-            assert isinstance(u, unicode) or u is None, repr(u)
-            log.debug(LOG_CHECK,
-              u"LinkParser found link %r %r %r %r %r", tag, attr, u, name, base)
-            self.callback(u, self.parser.last_lineno(),
-                          self.parser.last_column(), name, base)
+            self.found_url(value, name, base)
+
+    def found_url(self, url, name, base):
+        """Add newly found URL to queue."""
+        assert isinstance(url, unicode) or url is None, repr(url)
+        self.callback(url, line=self.parser.last_lineno(),
+                      column=self.parser.last_column(), name=name, base=base)

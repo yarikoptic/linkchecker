@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,13 +17,15 @@
 """
 A dummy logger.
 """
-from . import Logger
+from . import _Logger
 
 
-class NoneLogger (Logger):
+class NoneLogger (_Logger):
     """
     Dummy logger printing nothing.
     """
+
+    LoggerName = 'none'
 
     def comment (self, s, **args):
         """
@@ -37,17 +39,11 @@ class NoneLogger (Logger):
         """
         pass
 
-    def log_filter_url (self, url_data, do_filter):
-        """
-        Do nothing.
-        """
-        pass
-
     def log_url (self, url_data):
         """Do nothing."""
         pass
 
-    def end_output (self):
+    def end_output (self, **kwargs):
         """
         Do nothing.
         """

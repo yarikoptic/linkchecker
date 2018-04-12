@@ -3,6 +3,18 @@ Installation
 If you are upgrading from older versions of LinkChecker you should
 also read the upgrading documentation stored in upgrading.txt.
 
+Setup with pip
+------------------
+If pip_ is available, this command should install LinkChecker on
+the local system:
+
+.. _pip: https://pypi.python.org/pypi/pip
+
+``sudo pip install LinkChecker``
+
+Note that this needs the Python development and a C compiler installed.
+For example on Debian Linux systems use ``sudo apt-get install python-dev``.
+
 
 Setup for Windows
 -----------------
@@ -11,9 +23,9 @@ Execute ``LinkChecker-x.y.exe`` and follow the instructions.
 
 Setup for Mac OS X
 ------------------
-Double click ``LinkChecker-x.y.dmg`` and drop the LinkChecker application
-in your programs folder
-
+Nobody is currently offering a "dmg" download for Mac OS X in your programs folder
+See https://github.com/linkcheck/linkchecker/issues/60
+...however the steps for compiling it from source are given below.
 
 Setup for GNU/Linux
 -------------------
@@ -43,44 +55,28 @@ First, install the required software.
    On most distributions, the distutils module is included in
    an extra ``python-dev`` package.
 
-3. Qt development tools
-   
-   The binary "qcollectiongenerator" is used to generate the
-   documentation files.
-   On Debian or Ubuntu systems, install the package qt4-dev-tools.
-   On Redhat systems, install the package qt-devel.
+3. Python requests module from https://pypi.python.org/pypi/requests
 
 4. *Optional, for bash-completion:*
-   optcomplete Python module from http://furius.ca/optcomplete/
+   argcomplete Python module from https://pypi.python.org/pypi/argcomplete
 
-5. *Optional, for HTML/CSS syntax checks:*
-   HTML tidy from http://utidylib.berlios.de/
-   cssutils from http://cthedot.de/cssutils/
-
-6. *Optional, for displaying country codes:*
+5. *Optional, for displaying country codes:*
    GeoIP from http://www.maxmind.com/app/python
 
-7. *Optional, used for Virus checking:*
+6. *Optional, used for Virus checking:*
    ClamAv from http://www.clamav.net/
 
-8. *Optional, used for login form submission:*
-   Twill from http://twill.idyll.org/
-
-9. *Optional, for GNOME proxy setting parsing:*
+7. *Optional, for GNOME proxy setting parsing:*
     Python Gtk from http://www.pygtk.org/downloads.html
 
-10. *Optional, to run the WSGI web interface:*
-    Apache from http://httpd.apache.org/
-    mod_wsgi from http://code.google.com/p/modwsgi/
+8. *Optional, to run the WSGI web interface:*
+   Apache from http://httpd.apache.org/
+   mod_wsgi from http://code.google.com/p/modwsgi/
 
 
 Now install the application.
 
-1. Generate Qt documentation
-   
-   Run ``make -C doc/html`` to generate the Qt help file.
-
-2. Compile Python modules
+1. Compile Python modules
    
    Run ``python setup.py sdist --manifest-only`` to create the MANIFEST
    file.
@@ -90,7 +86,7 @@ Now install the application.
    The CC environment variable is checked before compilation, so you can
    change the default C compiler with ``export CC=myccompiler``.
 
-3.
+2.
    a) Installation as root
       
       Run ``sudo python setup.py install`` to install LinkChecker.
@@ -114,21 +110,48 @@ After installation
 ------------------
 LinkChecker is now installed. Have fun!
 
-
 Manual setup for OSX systems
 ----------------------------
 
 1. Install the XCode developer tools
 
-2. Install homebrew_ and then install pyqt.
+2. Install homebrew_
    
    .. _homebrew: http://mxcl.github.com/homebrew/
 
-3. Run ``make app``.
-   
-   Note: this appears not to be working due to bugs
-   in third-party libraries (but it worked the last time I had
-   an OSX system available).
+3. Install dependencies
+
+   brew update
+   brew install python
+   brew install gettext
+   # link gettext or put the msgfmt binary in your PATH
+   brew link --force gettext
+
+4. Install py2app 
+   (from http://svn.pythonmac.org/py2app/py2app/trunk/doc/index.html#installation)
+   Requires 'easy_install' --
+   $ curl -O http://peak.telecommunity.com/dist/ez_setup.py
+   $ sudo python ez_setup.py -U setuptools
+   Now install py2app:
+   $ sudo easy_install -U py2app
+
+5. git clone git@github.com:wummel/linkchecker.git linkchecker
+
+6. cd linkchecker
+
+7. Run ``pip install -r requirements.txt --use-mirrors`` and after that ``make app``
+
+8. Install the resulting .dmg
+
+   # mount DMG
+   mkdir -p dist/mnt
+   hdiutil attach -mountpoint dist/mnt dist/LinkChecker-x.y.z.dmg
+   # to run directly
+   open -n dist/mnt/LinkChecker.app --args http://www.example.org
+   # install the app
+   sudo cp -r dist/mnt/LinkChecker.app /Applications
+   # unmount DMG
+   hdiutil detach dist/mnt
 
 
 WSGI web interface

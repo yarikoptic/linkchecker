@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2004-2012 Bastian Kleineidam
+# Copyright (C) 2004-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@ Test string formatting operations.
 
 import unittest
 import os
+import time
 import linkcheck.strformat
 
 
@@ -59,7 +60,7 @@ class TestStrFormat (unittest.TestCase):
         self.assertEqual(wrap(s, -1), s)
         self.assertEqual(wrap(s, 0), s)
         l = len(os.linesep)
-        gap = " "*l
+        gap = " "
         s2 = "11%(gap)s22%(sep)s33%(gap)s44%(sep)s55" % \
              {'sep': os.linesep, 'gap': gap}
         # splitting lines
@@ -85,7 +86,7 @@ class TestStrFormat (unittest.TestCase):
         self.assertEqual(linkcheck.strformat.strsize(0), "0B")
         self.assertEqual(linkcheck.strformat.strsize(1), "1B")
         self.assertEqual(linkcheck.strformat.strsize(2), "2B")
-        self.assertEqual(linkcheck.strformat.strsize(1023), "1023B")
+        self.assertEqual(linkcheck.strformat.strsize(1023, grouping=False), "1023B")
         self.assertEqual(linkcheck.strformat.strsize(1024), "1KB")
         self.assertEqual(linkcheck.strformat.strsize(1024*25), "25.00KB")
         self.assertEqual(linkcheck.strformat.strsize(1024*1024), "1.00MB")
@@ -120,8 +121,8 @@ class TestStrFormat (unittest.TestCase):
 
     def test_strtime (self):
         zone = linkcheck.strformat.strtimezone()
-        t = linkcheck.strformat.strtime(0)
-        self.assertEqual(t, "1970-01-01 01:00:00"+zone)
+        t = linkcheck.strformat.strtime(0, func=time.gmtime)
+        self.assertEqual(t, "1970-01-01 00:00:00"+zone)
 
     def test_duration (self):
         duration = linkcheck.strformat.strduration

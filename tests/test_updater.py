@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2011 Bastian Kleineidam
+# Copyright (C) 2011-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -31,11 +31,11 @@ class TestUpdater (unittest.TestCase):
         res, value = linkcheck.updater.check_update()
         self.assertTrue(type(res) == bool)
         if res:
-            self.assertTrue(value is None or isinstance(value, tuple))
+            self.assertTrue(value is None or isinstance(value, tuple), repr(value))
             if isinstance(value, tuple):
                 self.assertEqual(len(value), 2)
                 version, url = value
-                self.assertTrue(isinstance(version, basestring))
-                self.assertTrue(url is None or isinstance(url, basestring))
+                self.assertTrue(isinstance(version, basestring), repr(version))
+                self.assertTrue(url is None or isinstance(url, basestring), repr(url))
         else:
-            self.assertTrue(isinstance(value, unicode))
+            self.assertTrue(isinstance(value, unicode), repr(value))

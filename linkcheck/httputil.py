@@ -1,118 +1,164 @@
 # -*- coding: iso-8859-1 -*-
-# Various HTTP utils with a free license
-from cStringIO import StringIO
-from . import gzip2 as gzip
-from . import httplib2 as httplib
-from . import log, LOG_CHECK, fileutil
-import re
-import zlib
-import urllib
-import urllib2
+# Copyright (C) 2005-2014 Bastian Kleineidam
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 import base64
+from datetime import datetime
 
 
-###########################################################################
-# urlutils.py - Simplified urllib handling
-#
-#   Written by Chris Lawrence <lawrencc@debian.org>
-#   (C) 1999-2002 Chris Lawrence
-#
-# This program is freely distributable per the following license:
-#
-##  Permission to use, copy, modify, and distribute this software and its
-##  documentation for any purpose and without fee is hereby granted,
-##  provided that the above copyright notice appears in all copies and that
-##  both that copyright notice and this permission notice appear in
-##  supporting documentation.
-##
-##  I DISCLAIM ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING ALL
-##  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL I
-##  BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY
-##  DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
-##  WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
-##  ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
-##  SOFTWARE.
+DEFAULT_KEEPALIVE = 300
 
-def decode (page):
-    """Gunzip or deflate a compressed page."""
-    log.debug(LOG_CHECK, "page info %d %s", page.code, str(page.info()))
-    encoding = page.info().get("Content-Encoding")
-    if encoding in ('gzip', 'x-gzip', 'deflate'):
-        # cannot seek in socket descriptors, so must get content now
-        content = page.read()
-        try:
-            if encoding == 'deflate':
-                fp = StringIO(zlib.decompress(content))
-            else:
-                fp = gzip.GzipFile('', 'rb', 9, StringIO(content))
-        except zlib.error as msg:
-            log.debug(LOG_CHECK, "uncompressing had error "
-                 "%s, assuming non-compressed content", str(msg))
-            fp = StringIO(content)
-        # remove content-encoding header
-        headers = httplib.HTTPMessage(StringIO(""))
-        ceheader = re.compile(r"(?i)content-encoding:")
-        for h in page.info().keys():
-            if not ceheader.match(h):
-                headers[h] = page.info()[h]
-        newpage = urllib.addinfourl(fp, headers, page.geturl())
-        newpage.code = page.code
-        newpage.msg = page.msg
-        return newpage
-    return page
-
-
-class HttpWithGzipHandler (urllib2.HTTPHandler):
-    """Support gzip encoding."""
-    def http_open (self, req):
-        """Send request and decode answer."""
-        return decode(urllib2.HTTPHandler.http_open(self, req))
-
-
-if hasattr(httplib, 'HTTPS'):
-    class HttpsWithGzipHandler (urllib2.HTTPSHandler):
-        """Support gzip encoding."""
-
-        def https_open (self, req):
-            """Send request and decode answer."""
-            return decode(urllib2.HTTPSHandler.https_open(self, req))
-
-# end of urlutils.py routines
-###########################################################################
-
-
-def encode_multipart_formdata(fields, files=None):
-    """
-    From http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/146306
-
-    fields is a sequence of (name, value) elements for regular form fields.
-    files is a sequence of (name, filename, value) elements for data to be
-    uploaded as files.
-    Return (content_type, body) ready for httplib.HTTP instance
-    """
-    BOUNDARY = '----------ThIs_Is_tHe_bouNdaRY_$'
-    CRLF = '\r\n'
-    L = []
-    for (key, value) in fields:
-        L.append('--' + BOUNDARY)
-        L.append('Content-Disposition: form-data; name="%s"' % key)
-        L.append('')
-        L.append(value)
-    if files is not None:
-        for (key, filename, value) in files:
-            content_type = fileutil.guess_mimetype(filename)
-            L.append('--' + BOUNDARY)
-            L.append('Content-Disposition: form-data; name="%s"; filename="%s"' % (key, filename))
-            L.append('Content-Type: %s' % content_type)
-            L.append('')
-            L.append(value)
-    L.append('--' + BOUNDARY + '--')
-    L.append('')
-    body = CRLF.join(L)
-    content_type = 'multipart/form-data; boundary=%s' % BOUNDARY
-    return content_type, body
+MAX_HEADER_BYTES = 8*1024
 
 
 def encode_base64 (s):
     """Encode given string in base64, excluding trailing newlines."""
     return base64.b64encode(s)
+
+
+def x509_to_dict(x509):
+    """Parse a x509 pyopenssl object to a dictionary with keys
+    subject, subjectAltName and optional notAfter.
+    """
+    from requests.packages.urllib3.contrib.pyopenssl import get_subj_alt_name
+    res = {
+            'subject': (
+                (('commonName', x509.get_subject().CN),),
+            ),
+            'subjectAltName': [
+                ('DNS', value)
+                for value in get_subj_alt_name(x509)
+            ]
+    }
+    notAfter = x509.get_notAfter()
+    if notAfter is not None:
+        parsedtime = asn1_generaltime_to_seconds(notAfter)
+        if parsedtime is not None:
+            res['notAfter'] = parsedtime.strftime('%b %d %H:%M:%S %Y')
+            if parsedtime.tzinfo is None:
+                res['notAfter'] += ' GMT'
+        else:
+            # give up parsing, just set the string
+            res['notAfter'] = notAfter
+    return res
+
+
+def asn1_generaltime_to_seconds(timestr):
+    """The given string has one of the following formats
+    YYYYMMDDhhmmssZ
+    YYYYMMDDhhmmss+hhmm
+    YYYYMMDDhhmmss-hhmm
+    @return: a datetime object or None on error
+    """
+    res = None
+    timeformat = "%Y%m%d%H%M%S"
+    try:
+        res = datetime.strptime(timestr, timeformat + 'Z')
+    except ValueError:
+        try:
+            res = datetime.strptime(timestr, timeformat + '%z')
+        except ValueError:
+            pass
+    return res
+
+def has_header_value (headers, name, value):
+    """
+    Look in headers for a specific header name and value.
+    Both name and value are case insensitive.
+
+    @return: True if header name and value are found
+    @rtype: bool
+    """
+    name = name.lower()
+    value = value.lower()
+    for hname, hvalue in headers:
+        if hname.lower()==name and hvalue.lower()==value:
+            return True
+    return False
+
+
+def http_persistent (response):
+    """
+    See if the HTTP connection can be kept open according the the
+    header values found in the response object.
+
+    @param response: response instance
+    @type response: httplib.HTTPResponse
+    @return: True if connection is persistent
+    @rtype: bool
+    """
+    headers = response.getheaders()
+    if response.version == 11:
+        return not has_header_value(headers, 'Connection', 'Close')
+    return has_header_value(headers, "Connection", "Keep-Alive")
+
+
+def http_keepalive (headers):
+    """
+    Get HTTP keepalive value, either from the Keep-Alive header or a
+    default value.
+
+    @param headers: HTTP headers
+    @type headers: dict
+    @return: keepalive in seconds
+    @rtype: int
+    """
+    keepalive = headers.get("Keep-Alive")
+    if keepalive is not None:
+        try:
+            keepalive = int(keepalive[8:].strip())
+        except (ValueError, OverflowError):
+            keepalive = DEFAULT_KEEPALIVE
+    else:
+        keepalive = DEFAULT_KEEPALIVE
+    return keepalive
+
+
+def get_content_type (headers):
+    """
+    Get the MIME type from the Content-Type header value, or
+    'application/octet-stream' if not found.
+
+    @return: MIME type
+    @rtype: string
+    """
+    ptype = headers.get('Content-Type', 'application/octet-stream')
+    if ";" in ptype:
+        # split off not needed extension info
+        ptype = ptype.split(';')[0]
+    return ptype.strip().lower()
+
+
+def get_charset(headers):
+    """
+    Get the charset encoding from the Content-Type header value, or
+    None if not found.
+
+    @return: the content charset encoding
+    @rtype: string or None
+    """
+    from linkcheck.HtmlParser import get_ctype_charset
+    return get_ctype_charset(headers.get('Content-Type', ''))
+
+
+def get_content_encoding (headers):
+    """
+    Get the content encoding from the Content-Encoding header value, or
+    an empty string if not found.
+
+    @return: encoding string
+    @rtype: string
+    """
+    return headers.get("Content-Encoding", "").strip()

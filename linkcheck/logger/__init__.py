@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -61,7 +61,6 @@ class LogStatistics (object):
     """Gather log statistics:
     - number of errors, warnings and valid links
     - type of contents (image, video, audio, text, ...)
-    - number of different domains
     - URL lengths
     """
 
@@ -83,8 +82,6 @@ class LogStatistics (object):
         self.warnings_printed = 0
         # number of internal errors
         self.internal_errors = 0
-        # the set of checked domains
-        self.domains = set()
         # link types
         self.link_types = ContentTypes.copy()
         # URL length statistics
@@ -92,10 +89,8 @@ class LogStatistics (object):
         self.min_url_length = 0
         self.avg_url_length = 0.0
         self.avg_number = 0
-        # download stats
+        # overall downloaded bytes
         self.downloaded_bytes = None
-        # cache stats
-        self.robots_txt_stats = None
 
     def log_url (self, url_data, do_print):
         """Log URL statistics."""
@@ -108,7 +103,6 @@ class LogStatistics (object):
         self.warnings += num_warnings
         if do_print:
             self.warnings_printed += num_warnings
-        self.domains.add(url_data.domain)
         if url_data.content_type:
             key = url_data.content_type.split('/', 1)[0].lower()
             if key not in self.link_types:
@@ -135,7 +129,7 @@ class LogStatistics (object):
         self.internal_errors += 1
 
 
-class Logger (object):
+class _Logger (object):
     """
     Base class for logging of checked urls. It defines the public API
     (see below) and offers basic functionality for all loggers.
@@ -145,9 +139,10 @@ class Logger (object):
     * start_output()
         Initialize and start log output. Most loggers print a comment
         with copyright information.
-    * end_output()
+    * end_output(**kwargs)
         Finish log output, possibly flushing buffers. Most loggers also
         print some statistics.
+        Custom keyword arguments can be given for different loggers.
     * log_filter_url(url_data, do_print)
         Log a checked URL. The url_data object is a transport form of
         the UrlData class. The do_print flag indicates if this URL
@@ -157,12 +152,18 @@ class Logger (object):
 
     * start_output()
         Also call the base class implementation of this.
-    * end_output()
+    * end_output(**kwargs)
         See above.
     * log_url(url_data)
         Log a checked URL. Called by log_filter_url if do_print is True.
     """
     __metaclass__ = abc.ABCMeta
+
+    # A lowercase name for this logger, usable for option values
+    LoggerName = None
+
+    # Default log configuration
+    LoggerArgs = {}
 
     def __init__ (self, **args):
         """
@@ -191,6 +192,12 @@ class Logger (object):
         self.codec_errors = "replace"
         # Flag to see if logger is active. Can be deactivated on errors.
         self.is_active = True
+
+    def get_args(self, kwargs):
+        """Construct log configuration from default and user args."""
+        args = dict(self.LoggerArgs)
+        args.update(kwargs)
+        return args
 
     def get_charset_encoding (self):
         """Translate the output encoding to a charset encoding name."""
@@ -395,7 +402,7 @@ class Logger (object):
         pass
 
     @abc.abstractmethod
-    def end_output (self):
+    def end_output (self, **kwargs):
         """
         End of output, used for cleanup (eg output buffer flushing).
         """
@@ -430,50 +437,24 @@ class Logger (object):
         log.warn(LOG_CHECK, "internal error occurred")
         self.stats.log_internal_error()
 
-    def add_statistics(self, robots_txt_stats, download_stats):
-        """Add cache and download statistics."""
-        self.stats.robots_txt_stats = robots_txt_stats
-        self.stats.downloaded_bytes = download_stats
-
     def format_modified(self, modified, sep=" "):
-        """Format modification date if it's not None.
-        @param modified: modification date
+        """Format modification date in UTC if it's not None.
+        @param modified: modification date in UTC
         @ptype modified: datetime or None
         @return: formatted date or empty string
         @rtype: unicode
         """
         if modified is not None:
-            return modified.isoformat(sep)
+            return modified.strftime("%Y-%m-%d{0}%H:%M:%S.%fZ".format(sep))
         return u""
 
-
-# the standard URL logger implementations
-from .text import TextLogger
-from .html import HtmlLogger
-from .gml import GMLLogger
-from .dot import DOTLogger
-from .sql import SQLLogger
-from .csvlog import CSVLogger
-from .blacklist import BlacklistLogger
-from .gxml import GraphXMLLogger
-from .customxml import CustomXMLLogger
-from .none import NoneLogger
-from .sitemapxml import SitemapXmlLogger
+def _get_loggers():
+    """Return list of Logger classes."""
+    from .. import loader
+    modules = loader.get_package_modules('logger')
+    return list(loader.get_plugins(modules, [_Logger]))
 
 
-# default URL logger classes
-Loggers = {
-    "text": TextLogger,
-    "html": HtmlLogger,
-    "gml": GMLLogger,
-    "dot": DOTLogger,
-    "sql": SQLLogger,
-    "csv": CSVLogger,
-    "blacklist": BlacklistLogger,
-    "gxml": GraphXMLLogger,
-    "xml": CustomXMLLogger,
-    "sitemap": SitemapXmlLogger,
-    "none": NoneLogger,
-}
-# for easy printing: a comma separated logger list
-LoggerKeys = ", ".join(repr(name) for name in Loggers)
+LoggerClasses = _get_loggers()
+LoggerNames = [x.LoggerName for x in LoggerClasses]
+LoggerKeys = ", ".join(repr(x) for x in LoggerNames)

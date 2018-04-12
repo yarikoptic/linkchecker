@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2011-2012 Bastian Kleineidam
+# Copyright (C) 2011-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,6 +17,7 @@
 
 import os
 import sys
+from xdg import xdg_config_home
 
 # Windows filename encoding
 nt_filename_encoding="mbcs"
@@ -40,7 +41,7 @@ def get_profile_dir ():
         if sys.platform == 'darwin':
             dirpath = os.path.join(basedir, u"Library", u"Application Support")
         else:
-            dirpath = os.path.join(basedir, u".config")
+            dirpath = xdg_config_home
         dirpath = os.path.join(dirpath, u"Google", u"Chrome")
     return dirpath
 

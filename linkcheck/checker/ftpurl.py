@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,14 +19,18 @@ Handle FTP links.
 """
 
 import ftplib
-from cStringIO import StringIO
+try:
+    from cStringIO import StringIO
+except ImportError:
+    # Python 3
+    from io import StringIO
 
-from .. import log, LOG_CHECK, LinkCheckerError, fileutil
-from . import proxysupport, httpurl, internpaturl, get_index_html, pooledconnection
+from .. import log, LOG_CHECK, LinkCheckerError, mimeutil
+from . import proxysupport, httpurl, internpaturl, get_index_html
 from .const import WARN_FTP_MISSING_SLASH
 
 
-class FtpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledconnection.PooledConnection):
+class FtpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport):
     """
     Url link with ftp scheme.
     """
@@ -70,14 +74,9 @@ class FtpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledco
 
     def login (self):
         """Log into ftp server and check the welcome message."""
-        def create_connection(scheme, host, port):
-            """Create a new ftp connection."""
-            connection = ftplib.FTP(timeout=self.aggregate.config["timeout"])
-            if log.is_debug(LOG_CHECK):
-                connection.set_debuglevel(1)
-            return connection
-        scheme, host, port = self.get_netloc()
-        self.get_pooled_connection(scheme, host, port, create_connection)
+        self.url_connection = ftplib.FTP(timeout=self.aggregate.config["timeout"])
+        if log.is_debug(LOG_CHECK):
+            self.url_connection.set_debuglevel(1)
         try:
             self.url_connection.connect(self.host, self.port)
             _user, _password = self.get_user_password()
@@ -92,6 +91,7 @@ class FtpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledco
                 # note that the info may change every time a user logs in,
                 # so don't add it to the url_data info.
                 log.debug(LOG_CHECK, "FTP info %s", info)
+                pass
             else:
                 raise LinkCheckerError(_("Got no answer from FTP server"))
         except EOFError as msg:
@@ -105,6 +105,7 @@ class FtpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledco
             features = self.url_connection.sendcmd("FEAT")
         except ftplib.error_perm as msg:
             log.debug(LOG_CHECK, "Ignoring error when getting FTP features: %s" % msg)
+            pass
         else:
             log.debug(LOG_CHECK, "FTP features %s", features)
             if " UTF-8" in features.splitlines():
@@ -164,22 +165,13 @@ class FtpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledco
         self.url_connection.dir(add_entry)
         return files
 
-    def is_html (self):
-        """See if URL target is a HTML file by looking at the extension."""
-        return self.ContentMimetypes.get(self.get_content_type()) == "html"
-
-    def is_css (self):
-        """See if URL target is a CSS file by looking at the extension."""
-        return self.ContentMimetypes.get(self.get_content_type()) == "css"
-
     def is_parseable (self):
         """See if URL target is parseable for recursion."""
         if self.is_directory():
             return True
-        ctype = self.get_content_type(self.get_content)
-        if ctype in self.ContentMimetypes:
+        if self.content_type in self.ContentMimetypes:
             return True
-        log.debug(LOG_CHECK, "URL with content type %r is not parseable.", ctype)
+        log.debug(LOG_CHECK, "URL with content type %r is not parseable.", self.content_type)
         return False
 
     def is_directory (self):
@@ -188,21 +180,10 @@ class FtpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledco
         path = self.urlparts[2]
         return (not path) or path.endswith('/')
 
-    def parse_url (self):
-        """Parse URL target for links."""
-        if self.is_directory():
-            self.parse_html()
-            return
-        key = self.ContentMimetypes[self.get_content_type(self.get_content)]
-        getattr(self, "parse_"+key)()
-        self.add_num_url_info()
-
-    def get_content_type (self, read=None):
-        """Return URL content type, or an empty string if content
+    def set_content_type (self):
+        """Set URL content type, or an empty string if content
         type could not be found."""
-        if self.content_type is None:
-            self.content_type = fileutil.guess_mimetype(self.url, read=read)
-        return self.content_type
+        self.content_type = mimeutil.guess_mimetype(self.url, read=self.get_content)
 
     def read_content (self):
         """Return URL target content, or in case of directories a dummy HTML
@@ -210,6 +191,7 @@ class FtpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledco
         if self.is_directory():
             self.url_connection.cwd(self.filename)
             self.files = self.get_files()
+            # XXX limit number of files?
             data = get_index_html(self.files)
         else:
             # download file in BINARY mode
@@ -217,21 +199,20 @@ class FtpUrl (internpaturl.InternPatternUrl, proxysupport.ProxySupport, pooledco
             buf = StringIO()
             def stor_data (s):
                 """Helper method storing given data"""
-                urls = self.aggregate.add_download_data(self.cache_content_key, s)
-                self.warn_duplicate_content(urls)
                 # limit the download size
-                if (buf.tell() + len(s)) > self.MaxFilesizeBytes:
+                if (buf.tell() + len(s)) > self.max_size:
                     raise LinkCheckerError(_("FTP file size too large"))
                 buf.write(s)
             self.url_connection.retrbinary(ftpcmd, stor_data)
             data = buf.getvalue()
             buf.close()
-        return data, len(data)
+        return data
 
     def close_connection (self):
         """Release the open connection from the connection pool."""
-        if self.url_connection is None:
-            return
-        scheme, host, port = self.get_netloc()
-        self.aggregate.connections.release(scheme, host, port, self.url_connection)
-        self.url_connection = None
+        if self.url_connection is not None:
+            try:
+                self.url_connection.quit()
+            except Exception:
+                pass
+            self.url_connection = None

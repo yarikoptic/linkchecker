@@ -2,24 +2,17 @@ url file://%(curdir)s/%(datadir)s/misc.html
 cache key file://%(curdir)s/%(datadir)s/misc.html
 real url file://%(curdir)s/%(datadir)s/misc.html
 name %(datadir)s/misc.html
-info 5 URLs parsed.
 valid
 
 url http://www.example.com/
 cache key http://www.example.com/
-real url http://www.iana.org/domains/example/
-info Redirected to `http://www.iana.org/domains/example/'.
+real url http://www.example.com/
 valid
 
 url favicon.ico
 cache key file://%(curdir)s/%(datadir)s/favicon.ico
 real url file://%(curdir)s/%(datadir)s/favicon.ico
 valid
-
-url 
-cache key None
-real url 
-error
 
 url test.swf
 cache key file://%(curdir)s/%(datadir)s/test.swf

@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2005-2012 Bastian Kleineidam
+# Copyright (C) 2005-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,13 +18,20 @@
 A DOT graph format logger. The specification has been taken from
 http://www.graphviz.org/doc/info/lang.html
 """
-from .graph import GraphLogger
+from .graph import _GraphLogger
 
 
-class DOTLogger (GraphLogger):
+class DOTLogger (_GraphLogger):
     """
     Generates .dot sitemap graphs. Use graphviz to see the sitemap graph.
     """
+
+    LoggerName = "dot"
+
+    LoggerArgs = {
+        "filename": "linkchecker-out.dot",
+        "encoding": "ascii",
+    }
 
     def start_output (self):
         """Write start of checking info as DOT comment."""
@@ -52,8 +59,8 @@ class DOTLogger (GraphLogger):
                 self.writeln(u'    href="%s",' % dotquote(node["url"]))
             if node["dltime"] >= 0 and self.has_part("dltime"):
                 self.writeln(u"    dltime=%d," % node["dltime"])
-            if node["dlsize"] >= 0 and self.has_part("dlsize"):
-                self.writeln(u"    dlsize=%d," % node["dlsize"])
+            if node["size"] >= 0 and self.has_part("dlsize"):
+                self.writeln(u"    size=%d," % node["size"])
             if node["checktime"] and self.has_part("checktime"):
                 self.writeln(u"    checktime=%d," % node["checktime"])
             if self.has_part("extern"):

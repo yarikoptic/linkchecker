@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2011 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,12 +17,18 @@
 """
 A gml logger.
 """
-from .graph import GraphLogger
+from .graph import _GraphLogger
 
 
-class GMLLogger (GraphLogger):
+class GMLLogger (_GraphLogger):
     """GML means Graph Modeling Language. Use a GML tool to see
     the sitemap graph."""
+
+    LoggerName = 'gml'
+
+    LoggerArgs = {
+        "filename": "linkchecker-out.gml",
+    }
 
     def start_output (self):
         """Write start of checking info as gml comment."""
@@ -49,8 +55,8 @@ class GMLLogger (GraphLogger):
                 self.writeln(u'    url  "%s"' % node["url"])
             if node["dltime"] >= 0 and self.has_part("dltime"):
                 self.writeln(u"    dltime %d" % node["dltime"])
-            if node["dlsize"] >= 0 and self.has_part("dlsize"):
-                self.writeln(u"    dlsize %d" % node["dlsize"])
+            if node["size"] >= 0 and self.has_part("dlsize"):
+                self.writeln(u"    size %d" % node["size"])
             if node["checktime"] and self.has_part("checktime"):
                 self.writeln(u"    checktime %d" % node["checktime"])
             if self.has_part("extern"):

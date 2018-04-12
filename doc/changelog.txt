@@ -1,3 +1,256 @@
+9.4 "" (released xx.xx.xxxx)
+
+Features:
+- checking: Support itms-services: URLs.
+  Closes: GH bug #532
+- checking: Support XDG Base Directory Specification for configuration
+  and data.
+  Closes: GH bug #44
+- add Dockerfile
+- use xdg dirs for config & data
+- use tox for tests and fix travis build
+- add --no-robots commandline flag
+- Added plugin for parsing and checking links in Markdown files
+
+Changes:
+- installation: Remove dependency on msgfmt.py by pre-generating the
+  *.mo files and adding them to version control.
+  Reason was the difficulty to run msgfmt.py under both Python 2 and 3.
+- checking: When checking SSL certificates under POSIX systems try
+  to use the system certificate store.
+- logging: improved debugging by also enabling urllib3 output
+- remove third-party packages and use them as dependency
+- Allow wayback-format urls without affecting atom 'feed' urls
+- Move dev requirements into dev-requirements.txt
+- Crawl HTML attributes in deterministic order
+- Remove platform-specific installer stuff and ensure a build .whl wheel file can be built.
+- Move GUI files to separate project
+
+Fixes:
+- checking: Correct typos in the proxy handling code.
+  Closes: GH bug #536
+- checking: Add to default HTTP client headers instead of replacing.
+- cmdline: Reactivate paging of help pages.
+- requirements: Fix requests module version check.
+  Closes: GH bug #548
+- load cookies from the --cookiefile correctly
+- fix incorrect call to the logging module
+- Fix TypeError: hasattr(): attribute name must be string
+- fix HTTPS URL checks
+
+
+9.3 "Better Living Through Chemistry" (released 16.7.2014)
+
+Features:
+- checking: Parse and check links in PDF files.
+- checking: Parse Refresh: and Content-Location: HTTP headers for URLs.
+
+Changes:
+- plugins: PDF and Word checks are now parser plugins
+  (PdfParser, WordParser). Both plugins are not enabled
+  by default since they require third party modules.
+- plugins: Print a warning for enabled plugins that could not
+  import needed third party modules.
+- checking: Treat empty URLs as same as parent URL.
+  Closes: GH bug #524
+- installation: Replaced the twill dependency with local code.
+
+Fixes:
+- checking: Catch XML parse errors in sitemap XML files and print them
+  as warnings. Patch by Mark-Hetherington.
+  Closes: GH bug #516
+- checking: Fix internal URL match pattern. Patch by Mark-Hetherington.
+  Closes: GH bug #510
+- checking: Recalculate extern status after HTTP redirection.
+  Patch by Mark-Hetherington.
+  Closes: GH bug #515
+- checking: Do not strip quotes from already resolved URLs.
+  Closes: GH bug #521
+- cgi: Sanitize configuration.
+  Closes: GH bug #519
+- checking: Use user-supplied authentication and proxies when requestiong
+  robot.txt.
+- plugins: Fix Word file check plugin.
+  Closes: GH bug #530
+
+
+9.2 "Rick and Morty" (released 23.4.2014)
+
+Fixes:
+- checking: Don't scan external robots.txt sitemap URLs.
+  Closes: GH bug #495
+- installation: Correct case for pip install command.
+  Closes: GH bug #498
+
+Features:
+- checking: Parse and check HTTP Link: headers.
+- checking: Support parsing of HTML image srcset attributes.
+- checking: Support parsing of HTML schema itemtype attributes.
+
+
+9.1 "Don Jon" (released 30.3.2014)
+
+Features:
+- checking: Support parsing of sitemap and sitemap index XML files.
+  Closes: GH bug #413
+- checking: Add new HTTP header info plugin.
+- logging: Support arbitrary encodings in CSV output.
+  Closes: GH bug #467
+- installation: Use .gz compression for source release to support
+  "pip install".
+  Closes: GH bug #461
+
+Changes:
+- checking: Ignored URLs are reported earlier now.
+- checking: Updated the list of unkonwn or ignored URI schemes.
+- checking: Internal errors do not disable check threads anymore.
+- checking: Disable URL length warning for data: URLs.
+- checking: Do not warn about missing addresses on mailto links that have
+  subjects.
+- checking: Check and display SSL certificate info even on redirects.
+  Closes: GH bug #489
+- installation: Check requirement for Python requests >= 2.2.0.
+  Closes: GH bug #478
+- logging: Display downloaded bytes.
+
+Fixes:
+- checking: Fix internal errors in debug output.
+  Closes: GH bug #472
+- checking: Fix URL result caching.
+- checking: Fix assertion in external link checking.
+- checking: Fix SSL errors on Windows.
+  Closes: GH bug #471
+- checking: Fix error when SNI checks are enabled.
+  Closes: GH bug #488
+- gui: Fix warning regex settings.
+  Closes: GH bug #485
+
+
+9.0 "The Wolf of Wall Street" (released 3.3.2014)
+
+Features:
+- checking: Support connection and content check plugins.
+- checking: Move lots of custom checks like Antivirus and syntax
+  checks into plugins (see upgrading.txt for more info).
+- checking: Add options to limit the number of requests per second,
+  allowed URL schemes and maximum file or download size.
+  Closes: GH bug #397, #465, #420
+- checking: Support checking Sitemap: URLs in robots.txt files.
+- checking: Reduced memory usage when caching checked links.
+  Closes: GH bug #429
+- gui: UI language can be changed dynamically.
+  Closes: GH bug #391
+
+Changes:
+- checking: Use the Python requests module for HTTP and HTTPS requests.
+  Closes: GH bug #393, #463, #417
+- logging: Removed download, domains and robots.txt statistics.
+- logging: HTML output is now in HTML5.
+- checking: Removed 301 warning since 301 redirects are used
+  a lot without updating the old URL links.
+  Also, recursive redirection is not checked any more since there
+  is a maximum redirection limit anyway.
+  Closes: GH bug #444, #419
+- checking: Disallowed access by robots.txt is an info now, not
+  a warning. Otherwise it produces a lot of warnings which
+  is counter-productive.
+- checking: Do not check SMTP connections for mailto: URLs anymore.
+  It resulted in lots of false warnings since spam prevention
+  usually disallows direct SMTP connections from unrecognized
+  client IPs.
+- checking: Only internal URLs are checked as default. To check
+  external urls use --check-extern.
+  Closes: GH bug #394, #460
+- checking: Document that gconf and KDE proxy settings are parsed.
+  Closes: GH bug #424
+- checking: Disable twill page refreshing.
+  Closes: GH bug #423
+- checking: The default number of checking threads is 10 now instead of 100.
+
+Fixes:
+- logging: Status was printed every second regardless of the
+  configured wait time.
+- logging: Add missing column name to SQL insert command.
+  Closes: GH bug #399
+- checking: Several speed and memory usage improvements.
+- logging: Fix --no-warnings option.
+  Closes: GH bug #457
+- logging: The -o none now sets the exit code.
+  Closes: GH bug #451
+- checking: For login pages, use twill form field counter if
+  the field has neither name nor id.
+  Closes: GH bug #428
+- configuration: Check regular expressions for errors.
+  Closes: GH bug #410
+
+
+8.6 "About Time" (released 8.1.2014)
+
+Changes:
+- checking: Add "Accept" HTTP header.
+  Closes: GH bug #395
+
+Fixes:
+- installer: Include missing logger classes for Windows and
+  OSX installer.
+  Closes: GH bug #448
+
+
+8.5 "Christmas Vacation" (released 24.12.2013)
+
+Features:
+- checking: Make per-host connection limits configurable.
+- checking: Avoid DoS in SSL certificate host matcher.
+
+Changes:
+- checking: Always use the W3C validator to check HTML or CSS syntax.
+- checking: Remove the http-wrong-redirect warning.
+- checking: Remove the url-content-duplicate warning.
+- checking: Make SSL certificate verification optional and allow
+  user-specified certificate files.
+  Closes: GH bug #387
+- cmdline: Replace argument parsing. No changes in functionality, only
+  the help text will be formatted different.
+- gui: Check early if help files are not found.
+  Closes: GH bug #437
+- gui: Remember the last "Save result as" selection.
+  Closes: GH bug #380
+
+Fixes:
+- checking: Apache Coyote (the HTTP server of Tomcat) sends the wrong
+  Content-Type on HEAD requests. Automatically fallback to GET in this
+  case.
+  Closes: GH bug #414
+- checking: Do not use GET on POST forms.
+  Closes: GH bug #405
+- scripts: Fix argument parsing in linkchecker-nagios
+  Closes: GH bug #404
+- installation: Fix building on OS X systems.
+
+
+8.4 "Frankenweenie" (released 25.01.2013)
+
+Features:
+- checking: Support <link rel="dns-prefetch"> URLs.
+- logging: Sending SIGUSR1 signal prints the stack trace of all current
+  running threads. This makes debugging deadlocks easier.
+- gui: Support Drag-and-Drop of local files. If the local file is
+  a LinkChecker project (.lcp) file it is loaded, else the check
+  URL is set to the local file URL.
+
+Changes:
+- checking: Increase per-host connection limits to speed up checking.
+
+Fixes:
+- checking: Fix a crash when closing a Word document after scanning failed.
+  Closes: GH bug #369
+- checking: Catch UnicodeError from idna.encode() fixing an internal error when
+  trying to connect to certain invalid hostnames.
+- checking: Always close HTTP connections without body content.
+  See also http://bugs.python.org/issue16298
+  Closes: GH bug #376
+
+
 8.3 "Mahna Mahna Killer" (released 6.1.2013)
 
 Features:

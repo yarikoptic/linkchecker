@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2004-2012 Bastian Kleineidam
+# Copyright (C) 2004-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -37,8 +37,8 @@ class TestFilenames (unittest.TestCase):
         path = 'c:\\'
         realpath = get_nt_filename(path)
         self.assertEqual(path, realpath)
-        # Only works on my computer.
+        # XXX Only works on my computer.
         # Is there a Windows UNC share that is always available for tests?
-        path = '\\Vboxsrv\share\msg.txt'
-        realpath = get_nt_filename(path)
-        self.assertEqual(path, realpath)
+        #path = '\\Vboxsrv\share\msg.txt'
+        #realpath = get_nt_filename(path)
+        #self.assertEqual(path, realpath)

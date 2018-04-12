@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,7 +19,6 @@ import re
 import linecache
 import time
 import sys
-import thread
 import threading
 
 # tracing
@@ -78,8 +77,9 @@ def _trace_line (frame, event, arg):
     if filename.endswith((".pyc", ".pyo")):
         filename = filename[:-1]
     line = linecache.getline(filename, lineno)
-    tid = thread.get_ident()
-    tname = threading.currentThread().getName()
+    currentThread = threading.currentThread()
+    tid = currentThread.ident
+    tname = currentThread.getName()
     args = (tid, tname, time.time(), line.rstrip(), name, lineno)
     print("THREAD(%d) %r %.2f %s # %s:%d" % args)
 

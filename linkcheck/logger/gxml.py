@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2000-2012 Bastian Kleineidam
+# Copyright (C) 2000-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,16 +18,23 @@
 A GraphXML logger.
 """
 
-from .xmllog import XMLLogger
-from .graph import GraphLogger
+from .xmllog import _XMLLogger
+from .graph import _GraphLogger
 
 
-class GraphXMLLogger (XMLLogger, GraphLogger):
+class GraphXMLLogger (_XMLLogger, _GraphLogger):
     """XML output mirroring the GML structure. Easy to parse with any XML
     tool."""
 
-    def __init__ (self, **args):
+    LoggerName = 'gxml'
+
+    LoggerArgs =  {
+        "filename": "linkchecker-out.gxml",
+    }
+
+    def __init__ (self, **kwargs):
         """Initialize graph node list and internal id counter."""
+        args = self.get_args(kwargs)
         super(GraphXMLLogger, self).__init__(**args)
         self.nodes = {}
         self.nodeid = 0
@@ -51,8 +58,8 @@ class GraphXMLLogger (XMLLogger, GraphLogger):
             self.xml_starttag(u"data")
             if node["dltime"] >= 0 and self.has_part("dltime"):
                 self.xml_tag(u"dltime", u"%f" % node["dltime"])
-            if node["dlsize"] >= 0 and self.has_part("dlsize"):
-                self.xml_tag(u"dlsize", u"%d" % node["dlsize"])
+            if node["size"] >= 0 and self.has_part("dlsize"):
+                self.xml_tag(u"size", u"%d" % node["size"])
             if node["checktime"] and self.has_part("checktime"):
                 self.xml_tag(u"checktime", u"%f" % node["checktime"])
             if self.has_part("extern"):
@@ -74,7 +81,7 @@ class GraphXMLLogger (XMLLogger, GraphLogger):
         self.xml_endtag(u"data")
         self.xml_endtag(u"edge")
 
-    def end_output (self):
+    def end_output (self, **kwargs):
         """Finish graph output, and print end of checking info as xml
         comment."""
         self.xml_endtag(u"graph")

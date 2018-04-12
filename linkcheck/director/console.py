@@ -1,5 +1,5 @@
 # -*- coding: iso-8859-1 -*-
-# Copyright (C) 2006-2013 Bastian Kleineidam
+# Copyright (C) 2006-2014 Bastian Kleineidam
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -42,15 +42,17 @@ class StatusLogger (object):
         """Save file descriptor for logging."""
         self.fd = fd
 
-    def log_status (self, checked, in_progress, queue, duration):
+    def log_status (self, checked, in_progress, queue, duration, num_urls):
         """Write status message to file descriptor."""
-        msg = _n("%2d URL active", "%2d URLs active", in_progress) % \
+        msg = _n("%2d thread active", "%2d threads active", in_progress) % \
           in_progress
         self.write(u"%s, " % msg)
-        msg = _n("%5d URL queued", "%5d URLs queued", queue) % queue
+        msg = _n("%5d link queued", "%5d links queued", queue) % queue
         self.write(u"%s, " % msg)
-        msg = _n("%4d URL checked", "%4d URLs checked", checked) % checked
-        self.write(u"%s, " % msg)
+        msg = _n("%4d link", "%4d links", checked) % checked
+        self.write(u"%s" % msg)
+        msg = _n("%3d URL", "%3d URLs", num_urls) % num_urls
+        self.write(u" in %s checked, " % msg)
         msg = _("runtime %s") % strformat.strduration_long(duration)
         self.writeln(msg)
         self.flush()
@@ -142,12 +144,12 @@ def print_app_info (out=stderr):
     """Print system and application info (output defaults to stderr)."""
     print(_("System info:"), file=out)
     print(configuration.App, file=out)
+    print(_("Released on:"), configuration.ReleaseDate, file=out)
     print(_("Python %(version)s on %(platform)s") %
                     {"version": sys.version, "platform": sys.platform}, file=out)
     for key in PYTHON_ENV_VARS:
         print_env_info(key, out=out)
-    for line in configuration.get_modules_info():
-        print(line, file=out)
+    print(configuration.get_modules_info(), file=out)
     stime = strformat.strtime(time.time())
     print(_("Local time:"), stime, file=out)
     print(_("sys.argv:"), sys.argv, file=out)
@@ -155,4 +157,6 @@ def print_app_info (out=stderr):
 
 def print_version (out=stdout):
     """Print the program version (output defaults to stdout)."""
-    print(configuration.AppInfo, file=out)
+    print(configuration.App, _("released"),
+          configuration.ReleaseDate, file=out)
+    print(configuration.Copyright, file=out)

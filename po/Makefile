@@ -2,25 +2,20 @@ XGETTEXT := xgettext
 MSGFMT := msgfmt
 MSGMERGE := msgmerge
 POSOURCES = $(shell find ../linkcheck -name \*.py) \
-	../linkchecker ../linkchecker-gui /usr/lib/python2.7/optparse.py
+	../linkchecker /usr/lib/python2.7/argparse.py
 LDIR = ../share/locale
 PACKAGE = linkchecker
 TEMPLATE = $(PACKAGE).pot
-MYMAIL := calvin@users.sourceforge.net
+MYMAIL := bastian.kleineidam@web.de
 LFILE = LC_MESSAGES/$(PACKAGE).mo
 # defined language (add new languages here)
 LANGUAGES = de fr es
+MOFILES = $(wildcard *.po)
 
-all:
+all:	$(MOFILES)
 
-mofiles:
-	@for la in $(LANGUAGES); do \
-	  if [ ! -d $(LDIR)/$$la/LC_MESSAGES ]; then \
-	    mkdir -p $(LDIR)/$$la/LC_MESSAGES; \
-	  fi; \
-	  echo "Formatting language catalog $${la}:"; \
-	  $(MSGFMT) -c --statistics -o $(LDIR)/$$la/$(LFILE) $$la.po; \
-	done
+%.mo:	%.po
+	$(MSGFMT) -c --statistics -o $@ $<
 
 %.po:	$(TEMPLATE)
 	$(MSGMERGE) -U --suffix=.bak $@ $<
@@ -42,4 +37,4 @@ clean:
 	@for f in $(LANGUAGES); do rm -f $(LDIR)/$$f/$(LFILE); done
 	rm -f *.mo *.bak
 
-.PHONY: mofiles clean
+.PHONY: clean
