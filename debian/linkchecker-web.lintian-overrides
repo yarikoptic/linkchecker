@@ -1,0 +1,5 @@
+# those *are* wrapped in the recommended IfVersion
+linkchecker-web: apache2-deprecated-auth-config etc/apache2/conf-available/linkchecker-web.conf (line 13) Order
+linkchecker-web: apache2-deprecated-auth-config etc/apache2/conf-available/linkchecker-web.conf (line 14) Deny
+linkchecker-web: apache2-deprecated-auth-config etc/apache2/conf-available/linkchecker-web.conf (line 15) Allow
+linkchecker-web: apache2-deprecated-auth-config etc/apache2/conf-available/linkchecker-web.conf (line 20) Allow
