@@ -9,7 +9,7 @@ set -e
 if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
     if [ -e /usr/share/apache2/apache2-maintscript-helper ] ; then
         . /usr/share/apache2/apache2-maintscript-helper
-        apache2_invoke disconf linkchecker.conf || exit $?
+        apache2_invoke disconf linkchecker-web.conf || exit $?
     fi
 fi
 

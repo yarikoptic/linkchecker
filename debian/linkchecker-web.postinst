@@ -18,7 +18,7 @@ esac
 if [ "$1" = "configure" ]; then
     if [ -e /usr/share/apache2/apache2-maintscript-helper ] ; then
         . /usr/share/apache2/apache2-maintscript-helper
-        apache2_invoke enconf linkchecker.conf || exit $?
+        apache2_invoke enconf linkchecker-web.conf || exit $?
     fi
 fi
 
