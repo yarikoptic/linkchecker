@@ -1,4 +1,3 @@
-doc/html/*.css
-doc/html/index.html
-doc/html/logo64x64.png
 doc/upgrading.txt
+doc/*.mdwn
+doc/examples/
