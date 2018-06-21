@@ -1351,7 +1351,7 @@ linkchecker (1.3.0) unstable; urgency=low
 
 linkchecker (1.2.15) unstable; urgency=low
 
-  * remove ssl modules for main linkchecker package; make a separate 
+  * remove ssl modules for main linkchecker package; make a separate
     package linkchecker-ssl for non-US
   * adjust build-depends and depends
   * fix anchor checking
@@ -1452,7 +1452,7 @@ linkchecker (1.2.9) unstable; urgency=low
   * setup.py: handle man pages correctly with bdist_rpm target
   * linkcheck/Config.py: correct order with user/password authentication
     entries (report and fix by Jamie Heilman <jamie@audible.transient.net>)
-  * linkchecker: default password is joe@, not guest@ (report and fix by 
+  * linkchecker: default password is joe@, not guest@ (report and fix by
     Jamie Heilman <jamie@audible.transient.net>)
   * test/*.html: comments in the test suite files
   * Config.py: dont use internals of the UserDict class
@@ -1602,7 +1602,7 @@ linkchecker (1.1.4) unstable; urgency=low
 
 27.3.2000
 	* Fixed misspelled exception in UrlData.py (BugTracker)
-	* Fixed wrong _time argument in HttpsUrlData.py 
+	* Fixed wrong _time argument in HttpsUrlData.py
 	  (Peter <peterw@waybeat.com.au>)
 	* Fixed missing env argument in lc.cgi
 	* allow a quote (') in mail adresses (e.g. o'hara@foo.com)
@@ -1657,7 +1657,7 @@ linkchecker (1.1.4) unstable; urgency=low
 	* support for multiple user/password pairs
 
 3.3.2000
-	* ignore HTTP status replies < 200 because some pages return -1 
+	* ignore HTTP status replies < 200 because some pages return -1
 	  and binary data (Gabor Liptak <gaborliptak@usa.net>)
 	* if HEAD reveals MIME type "application/octet", use GET method.
 	  this is needed for Zope pages (Bug Tracker submission)
@@ -1676,7 +1676,7 @@ linkchecker (1.1.4) unstable; urgency=low
 	* wrote a GML parser
 
 25.2.2000
-	* changed the name to LinkChecker; my old Java LinkChecker will 
+	* changed the name to LinkChecker; my old Java LinkChecker will
 	  disappear because I do not maintain it anymore
 
 21.2.2000
@@ -1797,7 +1797,7 @@ linkchecker (1.1.4) unstable; urgency=low
 	* fixed the 'No more open files' bug by closing all connections
 	* fixed thread synchronization in LinkChecker while loop
 	* you can specify -t 0 on the commandline to disable threading
-	* STILL MISSING: 
+	* STILL MISSING:
 	  HTTP authorization, Proxy and robots.txt parsing
 
 10.1.2000 Version 0.2.0
