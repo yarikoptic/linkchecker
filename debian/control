@@ -18,6 +18,8 @@ Architecture: any
 Depends: python,
          python-requests (>= 2.2.1),
          python-urllib3,
+         python-xdg,
+         python-dnspython,
          ${misc:Depends},
          ${python:Depends},
          ${shlibs:Depends}
