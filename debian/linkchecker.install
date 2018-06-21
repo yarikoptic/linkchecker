@@ -12,7 +12,6 @@ usr/lib/python*/dist-packages/linkcheck/logger
 usr/lib/python*/dist-packages/linkcheck/network
 usr/lib/python*/dist-packages/linkcheck/parser
 usr/lib/python*/dist-packages/linkcheck/plugins
-usr/share/applications/linkchecker.desktop
 usr/share/linkchecker/linkcheckerrc
 usr/share/man/de/man1/linkchecker.1
 usr/share/man/de/man5/linkcheckerrc.5
