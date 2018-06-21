@@ -16,19 +16,10 @@ esac
 #DEBHELPER#
 
 if [ "$1" = "configure" ]; then
-
-  CONF=linkchecker
-
-  if [ -e /usr/share/apache2/apache2-maintscript-helper ]; then
-    # apache 2.4
-    . /usr/share/apache2/apache2-maintscript-helper
-    apache2_invoke enconf $CONF
- fi
-
-  # reload apache configuration
-  if [ -x /etc/init.d/apache2 ]; then
-    invoke-rc.d apache2 reload || true
-  fi
+    if [ -e /usr/share/apache2/apache2-maintscript-helper ] ; then
+        . /usr/share/apache2/apache2-maintscript-helper
+        apache2_invoke enconf linkchecker.conf || exit $?
+    fi
 fi
 
 exit 0

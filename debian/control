@@ -52,12 +52,12 @@ Description: check websites and HTML documents for broken links
 
 Package: linkchecker-web
 Architecture: all
-Depends: apache2 | httpd,
-         libapache2-mod-wsgi | httpd-wsgi,
-         linkchecker,
+Depends: linkchecker,
          python,
          ${misc:Depends},
          ${python:Depends}
+Recommends: apache2 | httpd,
+            libapache2-mod-wsgi | httpd-wsgi
 Conflicts: linkchecker (<< 7.7)
 Description: check websites and HTML documents for broken links (web client)
  Provides a web interface to check links of websites and HTML documents.
