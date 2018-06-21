@@ -1,3 +1,21 @@
+linkchecker (9.4.0-2) unstable; urgency=medium
+
+  * add missing dependencies (Closes: #897462, #901780)
+  * remove old apache2.2 compat shims (Closes: #775087)
+  * remove .desktop file from commandline tool (Closes: #901782, #780488)
+  * silence various lintian warnings:
+    * follow apache policy more closely
+    * rename apache config file
+    * ignore false positives on old 2.2 apache config matches
+    * removing old pycompat
+    * clear out whitespace in changelog
+    * update standards to 4.1.4
+    * remove conflict with version from squeeze and earlier
+    * reformat copyright file to comply with dep5
+    * bump dh compat to 11 and fix docs install
+
+ -- Antoine Beaupré <anarcat@debian.org>  Thu, 21 Jun 2018 11:48:01 -0400
+
 linkchecker (9.4.0-1) unstable; urgency=low
 
   [ Bastian Kleineidam ]
