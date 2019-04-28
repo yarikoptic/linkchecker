@@ -269,10 +269,6 @@ def url_fix_wayback_query(path):
 
 def url_parse_query (query, encoding=None):
     """Parse and re-join the given CGI query."""
-    if isinstance(query, str_text):
-        if encoding is None:
-            encoding = url_encoding
-        query = query.encode(encoding, 'ignore')
     # if ? is in the query, split it off, seen at msdn.microsoft.com
     append = ""
     query = decode_for_unquote(query)
